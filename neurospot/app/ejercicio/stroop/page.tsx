@@ -16,7 +16,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { PauseCircle } from "lucide-react"
+import { PauseCircle, Check } from "lucide-react"
 
 const colors = [
   { name: "Rojo", value: "#ef4444" },
@@ -32,6 +32,7 @@ export default function StroopTestPage() {
   const [score, setScore] = useState(0)
   const [total, setTotal] = useState(0)
   const [showDialog, setShowDialog] = useState(false)
+  const [testCompleted, setTestCompleted] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
@@ -41,7 +42,7 @@ export default function StroopTestPage() {
       setTimeLeft((prev) => {
         if (prev <= 1) {
           clearInterval(timer)
-          router.push("/resultados")
+          completeTest()
           return 0
         }
         return prev - 1
@@ -54,7 +55,7 @@ export default function StroopTestPage() {
     }, 1000)
 
     return () => clearInterval(timer)
-  }, [router])
+  }, [])
 
   const generateNewWord = () => {
     const randomWordIndex = Math.floor(Math.random() * colors.length)
@@ -78,15 +79,38 @@ export default function StroopTestPage() {
     generateNewWord()
   }
 
+  const completeTest = () => {
+    setTestCompleted(true)
+    
+    // Guardar este ejercicio como completado en localStorage
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem("completedExercises") 
+        let completedExercises = saved ? JSON.parse(saved) : []
+        
+        if (!completedExercises.includes("stroop")) {
+          completedExercises.push("stroop")
+          localStorage.setItem("completedExercises", JSON.stringify(completedExercises))
+        }
+      } catch (e) {
+        console.error("Error updating completedExercises:", e)
+      }
+    }
+  }
+
+  const handleContinue = () => {
+    router.push("/ejercicio/lectura")
+  }
+
   return (
     <main className="min-h-screen flex flex-col">
       <Header showBackButton />
 
-      <div className="container max-w-md mx-auto px-4 py-6 flex-1 flex flex-col">
-        <Card className="border-none shadow-lg flex-1 flex flex-col">
-          <CardHeader className="pb-2">
+      <div className="container max-w-full mx-auto px-6 py-8 flex-1 flex flex-col">
+        <Card className="border-none shadow-lg flex-1 flex flex-col w-full max-w-6xl mx-auto">
+          <CardHeader className="pb-4 border-b">
             <div className="flex justify-between items-center">
-              <CardTitle className="text-xl">Test de Stroop</CardTitle>
+              <CardTitle className="text-2xl">Test de Stroop</CardTitle>
               <Button variant="ghost" size="icon" onClick={() => setShowDialog(true)} aria-label="Pausar ejercicio">
                 <PauseCircle className="h-6 w-6" />
               </Button>
@@ -101,32 +125,56 @@ export default function StroopTestPage() {
           </CardHeader>
 
           <CardContent className="flex-1 flex flex-col justify-center items-center space-y-8 py-8">
-            <div className="text-center space-y-6">
-              <div className="bg-muted/30 p-4 rounded-lg">
-                <p className="text-sm text-muted-foreground mb-2">
-                  Selecciona el COLOR en que está escrita la palabra, NO lo que dice la palabra.
-                </p>
-              </div>
+            {!testCompleted ? (
+              <>
+                <div className="text-center space-y-6">
+                  <div className="bg-muted/30 p-4 rounded-lg">
+                    <p className="text-sm text-muted-foreground mb-2">
+                      Selecciona el COLOR en que está escrita la palabra, NO lo que dice la palabra.
+                    </p>
+                  </div>
 
-              <div className="flex justify-center items-center h-24">
-                <h2 className="text-4xl font-bold" style={{ color: currentWord.color }}>
-                  {currentWord.text}
-                </h2>
-              </div>
-            </div>
+                  <div className="flex justify-center items-center h-24">
+                    <h2 className="text-4xl font-bold" style={{ color: currentWord.color }}>
+                      {currentWord.text}
+                    </h2>
+                  </div>
+                </div>
 
-            <div className="grid grid-cols-2 gap-4 w-full">
-              {colors.map((color) => (
-                <Button
-                  key={color.name}
-                  className="h-14 text-white font-medium"
-                  style={{ backgroundColor: color.value }}
-                  onClick={() => handleColorSelect(color.name)}
+                <div className="grid grid-cols-2 gap-4 w-full">
+                  {colors.map((color) => (
+                    <Button
+                      key={color.name}
+                      className="h-14 text-white font-medium"
+                      style={{ backgroundColor: color.value }}
+                      onClick={() => handleColorSelect(color.name)}
+                    >
+                      {color.name}
+                    </Button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="flex-1 flex flex-col justify-center items-center py-6 text-center space-y-6">
+                <div className="rounded-full bg-green-100 p-4 dark:bg-green-900/20">
+                  <Check className="h-8 w-8 text-green-600 dark:text-green-400" />
+                </div>
+                
+                <div>
+                  <h2 className="text-2xl font-bold mb-2">¡Prueba completada!</h2>
+                  <p className="text-muted-foreground mb-6">
+                    Has obtenido una puntuación de {score} sobre {total} ({Math.round((score / total) * 100)}%)
+                  </p>
+                </div>
+                
+                <Button 
+                  className="w-full h-14 text-white font-medium bg-[#3876F4] hover:bg-[#3876F4]/90"
+                  onClick={handleContinue}
                 >
-                  {color.name}
+                  Continuar con el siguiente ejercicio
                 </Button>
-              ))}
-            </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

@@ -30,8 +30,16 @@ export default function ConsentimientoPage() {
     <main className="min-h-screen flex flex-col">
       <Header showBackButton />
 
-      <div className="flex-1 container max-w-md mx-auto px-4 py-8 flex flex-col justify-center">
-        <Card className="border-none shadow-lg">
+      <div className="flex-1 container max-w-full mx-auto px-4 py-8 flex flex-col justify-center">
+        <div className="w-full max-w-4xl mx-auto p-4 mb-6 bg-yellow-50 border border-yellow-200 rounded-lg shadow-sm dark:bg-yellow-900/20 dark:border-yellow-800">
+          <h3 className="text-lg font-semibold text-yellow-800 dark:text-yellow-300 mb-2">¿Cómo funciona?</h3>
+          <p className="text-sm text-yellow-700 dark:text-yellow-400">
+            Completa todas las pruebas en orden. Cada prueba te ayudará a evaluar diferentes aspectos de tu atención.
+            Al terminar todas las pruebas, podrás ver tus resultados y descargarlos.
+          </p>
+        </div>
+        
+        <Card className="border-none shadow-lg w-full max-w-md mx-auto">
           <CardHeader>
             <CardTitle className="text-xl md:text-2xl">Consentimiento Legal</CardTitle>
           </CardHeader>
@@ -74,7 +82,12 @@ export default function ConsentimientoPage() {
                 </Alert>
               )}
 
-              <Button type="submit" size="lg" className="w-full bg-primary hover:bg-primary/90 text-white font-medium">
+              <Button 
+                type="submit" 
+                size="lg" 
+                className="w-full bg-primary hover:bg-primary/90 text-white font-medium"
+                disabled={!accepted}
+              >
                 Acepto y continuar
               </Button>
             </form>
