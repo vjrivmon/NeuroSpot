@@ -30,21 +30,25 @@ export default function ConsentimientoPage() {
     <main className="min-h-screen flex flex-col">
       <Header showBackButton />
 
-      <div className="flex-1 container max-w-full mx-auto px-4 py-8 flex flex-col justify-center">
-        <div className="w-full max-w-4xl mx-auto p-4 mb-6 bg-yellow-50 border border-yellow-200 rounded-lg shadow-sm dark:bg-yellow-900/20 dark:border-yellow-800">
-          <h3 className="text-lg font-semibold text-yellow-800 dark:text-yellow-300 mb-2">¿Cómo funciona?</h3>
-          <p className="text-sm text-yellow-700 dark:text-yellow-400">
-            Completa todas las pruebas en orden. Cada prueba te ayudará a evaluar diferentes aspectos de tu atención.
-            Al terminar todas las pruebas, podrás ver tus resultados y descargarlos.
-          </p>
-        </div>
-        
-        <Card className="border-none shadow-lg w-full max-w-md mx-auto">
-          <CardHeader>
-            <CardTitle className="text-xl md:text-2xl">Consentimiento Legal</CardTitle>
+      <div className="flex-1 container max-w-full mx-auto px-6 py-4 flex flex-col justify-center rounded-lg">
+        <Card className="border-none shadow-lg w-full max-w-2xl mx-auto rounded-xl border border-blue-100 dark:border-blue-900 overflow-hidden">
+          <CardHeader className="bg-blue-50/50 dark:bg-blue-950/50 border-b border-blue-100 dark:border-blue-900">
+            <CardTitle className="text-xl md:text-2xl">Antes de comenzar...</CardTitle>
           </CardHeader>
-          <CardContent>
+          
+          <div className="px-8 pt-6 pb-2">
+            <div className="p-4 mb-4 bg-green-50 border border-green-200 rounded-lg shadow-sm dark:bg-green-900/20 dark:border-green-800">
+              <h3 className="text-lg font-semibold text-green-800 dark:text-green-300 mb-2">¿Cómo funciona?</h3>
+              <p className="text-md text-green-700 dark:text-green-400">
+                Completa todas las pruebas en orden. Cada prueba te ayudará a evaluar diferentes aspectos de tu atención.
+                Al terminar todas las pruebas, podrás ver tus resultados y descargarlos.
+              </p>
+            </div>
+          </div>
+          
+          <CardContent className="px-8 pb-8">
             <form onSubmit={handleSubmit} className="space-y-6">
+              <h3 className="text-lg font-semibold mb-4">Consentimiento Legal</h3>
               <div className="space-y-4 text-sm md:text-base">
                 <p>
                   Como tutor legal, autorizo el uso de esta aplicación para evaluar posibles indicadores de TDAH en el
@@ -85,7 +89,7 @@ export default function ConsentimientoPage() {
               <Button 
                 type="submit" 
                 size="lg" 
-                className="w-full bg-primary hover:bg-primary/90 text-white font-medium"
+                className="w-full bg-primary hover:bg-primary/90 text-white font-medium text-base py-6 rounded-lg shadow-md transition-all"
                 disabled={!accepted}
               >
                 Acepto y continuar

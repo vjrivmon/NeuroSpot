@@ -1,6 +1,6 @@
 import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Clock } from "lucide-react"
+import { Clock, Lock } from "lucide-react"
 import Link from "next/link"
 import type { ReactNode } from "react"
 
@@ -12,13 +12,25 @@ interface ExerciseCardProps {
   time: string
   color: string
   iconColor: string
+  isAvailable?: boolean
+  completed?: boolean
 }
 
-export function ExerciseCard({ id, title, description, icon, time, color, iconColor }: ExerciseCardProps) {
+export function ExerciseCard({ 
+  id, 
+  title, 
+  description, 
+  icon, 
+  time, 
+  color, 
+  iconColor, 
+  isAvailable = true, 
+  completed = false 
+}: ExerciseCardProps) {
   return (
     <Card className="overflow-hidden transition-all hover:shadow-md">
       <div className="flex">
-        <div className={`${color} ${iconColor} p-4 flex items-center justify-center`}>
+        <div className={`${color} text-white p-4 flex items-center justify-center`}>
           <div className="w-12 h-12 flex items-center justify-center">{icon}</div>
         </div>
 
@@ -34,9 +46,18 @@ export function ExerciseCard({ id, title, description, icon, time, color, iconCo
               <span>{time}</span>
             </div>
 
-            <Button size="sm" className="bg-primary hover:bg-primary/90 text-white" asChild>
-              <Link href={`/ejercicio/${id}`}>Jugar</Link>
-            </Button>
+            {isAvailable ? (
+              <Button size="sm" className="bg-primary hover:bg-primary/90 text-white" asChild>
+                <Link href={`/ejercicio/${id}`}>
+                  {completed ? "Repetir" : "Jugar"}
+                </Link>
+              </Button>
+            ) : (
+              <Button size="sm" className="bg-gray-300 dark:bg-gray-700 text-gray-600 dark:text-gray-400 cursor-not-allowed" disabled>
+                <Lock className="h-3 w-3 mr-1" />
+                Bloqueado
+              </Button>
+            )}
           </CardFooter>
         </div>
       </div>
