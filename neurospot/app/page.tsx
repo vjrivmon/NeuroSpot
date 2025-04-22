@@ -26,16 +26,16 @@ export default function Home() {
               </div>
 
               <div className="pt-4 space-y-4">
-                <Button size="lg" className="w-full bg-primary hover:bg-primary/90 text-white font-medium py-6 text-base rounded-lg shadow-md transition-all" asChild>
+                <Button size="lg" className="w-full shadow-md" asChild>
                   <Link href="/consentimiento">
                     Comenzar Evaluación
-                    <ArrowRight className="ml-2 h-5 w-5" />
+                    <ArrowRight className="ml-1" />
                   </Link>
                 </Button>
 
-                <Button variant="outline" size="lg" className="w-full border-muted-foreground/20 py-6 text-base" asChild>
+                <Button variant="outline" size="lg" className="w-full" asChild>
                   <Link href="/resultados">
-                    <BarChart3 className="mr-2 h-5 w-5" />
+                    <BarChart3 className="mr-1" />
                     Ver resultados anteriores
                   </Link>
                 </Button>
