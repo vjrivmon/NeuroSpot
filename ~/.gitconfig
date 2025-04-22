@@ -1,0 +1,6 @@
+[core]
+	sshCommand = ssh -i ~/.ssh/id_ed25519_vjrivmon -o IdentitiesOnly=yes
+
+[user]
+	email = vicente@zicofy.com
+	name = Vicente Rivas Monferrer 
