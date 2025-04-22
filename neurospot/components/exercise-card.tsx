@@ -47,14 +47,14 @@ export function ExerciseCard({
             </div>
 
             {isAvailable ? (
-              <Button size="sm" className="bg-primary hover:bg-primary/90 text-white" asChild>
+              <Button size="sm" className="text-white" asChild>
                 <Link href={`/ejercicio/${id}`}>
                   {completed ? "Repetir" : "Jugar"}
                 </Link>
               </Button>
             ) : (
               <Button size="sm" className="bg-gray-300 dark:bg-gray-700 text-gray-600 dark:text-gray-400 cursor-not-allowed" disabled>
-                <Lock className="h-3 w-3 mr-1" />
+                <Lock className="mr-1" />
                 Bloqueado
               </Button>
             )}

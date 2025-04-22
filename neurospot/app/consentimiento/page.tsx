@@ -32,7 +32,7 @@ export default function ConsentimientoPage() {
 
       <div className="flex-1 container max-w-full mx-auto px-6 py-4 flex flex-col justify-center rounded-lg">
         <Card className="border-none shadow-lg w-full max-w-2xl mx-auto rounded-xl border border-blue-100 dark:border-blue-900 overflow-hidden">
-          <CardHeader className="bg-blue-50/50 dark:bg-blue-950/50 border-b border-blue-100 dark:border-blue-900">
+          <CardHeader className="bg-white dark:bg-white-950/50 border-b border-blue-100 dark:border-blue-900">
             <CardTitle className="text-xl md:text-2xl">Antes de comenzar...</CardTitle>
           </CardHeader>
           
@@ -62,17 +62,16 @@ export default function ConsentimientoPage() {
                   La información será tratada con confidencialidad según la normativa vigente de protección de datos.
                 </p>
 
-                <div className="flex items-start space-x-3 pt-4">
+                <div className="flex items-center space-x-3 pt-4">
                   <Checkbox
                     id="terms"
                     checked={accepted}
                     onCheckedChange={(checked) => setAccepted(checked as boolean)}
                     aria-required="true"
-                    className="mt-1"
                   />
                   <label
                     htmlFor="terms"
-                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                    className="text-sm font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                   >
                     Acepto los términos y condiciones como tutor legal del menor
                   </label>
@@ -89,7 +88,7 @@ export default function ConsentimientoPage() {
               <Button 
                 type="submit" 
                 size="lg" 
-                className="w-full bg-primary hover:bg-primary/90 text-white font-medium text-base py-6 rounded-lg shadow-md transition-all"
+                className="w-full shadow-md"
                 disabled={!accepted}
               >
                 Acepto y continuar
