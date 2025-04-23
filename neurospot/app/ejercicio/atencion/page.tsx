@@ -401,8 +401,8 @@ export default function AtencionPage() {
         </div>
       </div>
 
-      <div className="container max-w-full mx-auto px-6 py-8 flex-1 flex flex-col">
-        <Card className="border-none shadow-lg flex-1 flex flex-col w-full max-w-6xl mx-auto">
+      <div className="container max-w-full mx-auto px-6 pt-6 pb-4 flex flex-col">
+        <Card className="border-none shadow-lg flex flex-col w-full max-w-6xl mx-auto h-auto">
           <CardHeader className="pb-4 border-b">
             <div className="flex justify-between items-center">
               <CardTitle className="text-2xl">Prueba de Atención</CardTitle>
@@ -434,38 +434,46 @@ export default function AtencionPage() {
             <Progress value={progress} className="h-2" />
           </CardHeader>
 
-          <CardContent className="flex-1 flex flex-col justify-center items-center space-y-8 py-8">
+          <CardContent className="px-4 pt-3 pb-6 flex flex-col items-center space-y-3 min-h-0">
             {!gameStarted ? (
-              <div className="text-center space-y-6 max-w-xs mx-auto">
-                <div className="bg-muted/30 p-4 rounded-lg">
-                  <p className="text-sm text-muted-foreground mb-2">
-                    En esta prueba, verás diferentes letras que aparecerán en la pantalla.
+              <div className="text-center space-y-6 w-full">
+                <div className="bg-muted/30 p-4 rounded-lg w-full">
+                  <p className="text-sm text-muted-foreground mb-3 font-medium">
+                    Instrucciones:
                   </p>
-                  <p className="text-sm text-muted-foreground mb-2">
-                    Tu tarea es pulsar el botón <span className="font-bold">SOLO</span> cuando veas la letra <span className="font-bold">{targetLetter}</span>.
-                  </p>
-                  <p className="text-sm text-muted-foreground mb-2">
-                    La prueba tiene 3 niveles de dificultad progresiva y dura 1 minuto en total:
-                  </p>
-                  <ul className="text-xs text-muted-foreground text-left space-y-1 mb-2">
-                    <li>• Nivel 1: Fácil - Letras cada 4 segundos (30s)</li>
-                    <li>• Nivel 2: Medio - Letras cada 3 segundos (20s)</li>
-                    <li>• Nivel 3: Difícil - Letras cada 2 segundos (10s)</li>
-                  </ul>
-                  <p className="text-sm text-muted-foreground">
-                    Mantente atento durante toda la prueba.
-                  </p>
+                  <div className="flex items-start space-y-3 flex-col">
+                    <div className="flex items-center gap-2">
+                      <div className="bg-primary/20 rounded-full h-6 w-6 flex items-center justify-center text-primary font-bold">1</div>
+                      <p className="text-sm">
+                        Pulsa el botón <span className="font-bold">SOLO</span> cuando veas la letra <span className="font-bold text-primary">{targetLetter}</span>
+                      </p>
+                    </div>
+                    
+                    <div className="flex items-center gap-2">
+                      <div className="bg-primary/20 rounded-full h-6 w-6 flex items-center justify-center text-primary font-bold">2</div>
+                      <p className="text-sm">
+                        La prueba dura 1 minuto y tiene 3 niveles de dificultad
+                      </p>
+                    </div>
+                    
+                    <div className="flex items-center gap-2">
+                      <div className="bg-primary/20 rounded-full h-6 w-6 flex items-center justify-center text-primary font-bold">3</div>
+                      <p className="text-sm">
+                        Las letras aparecerán cada vez más rápido
+                      </p>
+                    </div>
+                  </div>
                 </div>
                 <Button 
-                  className="w-full h-14 text-white font-medium bg-[#3876F4] hover:bg-[#3876F4]/90"
+                  className="w-full h-12 text-white font-medium bg-[#3876F4] hover:bg-[#3876F4]/90"
                   onClick={startGame}
                 >
                   Comenzar
                 </Button>
               </div>
             ) : gameFinished ? (
-              <div className="text-center space-y-6 max-w-xs mx-auto">
-                <Alert className="bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800">
+              <div className="text-center space-y-4 w-full">
+                <Alert className="bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800 w-full">
                   <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
                   <div>
                     <AlertTitle className="text-green-800 dark:text-green-300">¡Prueba completada!</AlertTitle>
@@ -481,14 +489,14 @@ export default function AtencionPage() {
                   </div>
                 </Alert>
                 <Button 
-                  className="w-full h-14 text-white font-medium bg-[#3876F4] hover:bg-[#3876F4]/90"
+                  className="w-full h-12 text-white font-medium bg-[#3876F4] hover:bg-[#3876F4]/90"
                   onClick={() => router.push("/ejercicio/memoria")}
                 >
                   Continuar al siguiente ejercicio
                 </Button>
               </div>
             ) : showLevelTransition ? (
-              <div className="text-center space-y-6 max-w-xs mx-auto animate-pulse">
+              <div className="text-center space-y-4 w-full animate-pulse">
                 <h2 className="text-2xl font-bold">{levels[currentLevel].name}</h2>
                 <p className="text-sm text-muted-foreground">
                   {currentLevel === 0 
@@ -503,7 +511,7 @@ export default function AtencionPage() {
               </div>
             ) : (
               <>
-                <div className="text-center space-y-6 w-full">
+                <div className="text-center w-full">
                   <div className="flex flex-col items-center">
                     <div className="text-sm text-muted-foreground mb-2">
                       Pulsa cuando veas la letra <span className="font-bold text-primary">{targetLetter}</span>
@@ -525,13 +533,15 @@ export default function AtencionPage() {
                   </div>
                 </div>
 
-                <Button 
-                  className="w-full h-16 text-white font-medium text-xl bg-[#3876F4] hover:bg-[#3876F4]/90 active:scale-95 transition-transform"
-                  onClick={handleButtonPress}
-                  disabled={gamePaused || showLevelTransition}
-                >
-                  Pulsar
-                </Button>
+                <div className="w-full">
+                  <Button 
+                    className="w-full h-12 text-white font-medium text-lg bg-[#3876F4] hover:bg-[#3876F4]/90 active:scale-95 transition-transform"
+                    onClick={handleButtonPress}
+                    disabled={gamePaused || showLevelTransition}
+                  >
+                    Pulsar
+                  </Button>
+                </div>
               </>
             )}
           </CardContent>

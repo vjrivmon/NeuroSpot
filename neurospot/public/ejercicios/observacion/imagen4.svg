@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg width="800" height="600" xmlns="http://www.w3.org/2000/svg">
+  <!-- Fondo que simula una pared blanca -->
+  <rect width="800" height="600" fill="#f8f9fa" />
+  
+  <!-- Escritorio/mesa -->
+  <rect x="100" y="250" width="600" height="30" fill="#774936" />
+  <rect x="120" y="280" width="20" height="200" fill="#774936" />
+  <rect x="660" y="280" width="20" height="200" fill="#774936" />
+  
+  <!-- Elementos sobre el escritorio: objetos de oficina -->
+  
+  <!-- Laptop -->
+  <rect x="200" y="180" width="160" height="100" fill="#343a40" rx="5" ry="5" />
+  <rect x="200" y="230" width="160" height="10" fill="#212529" rx="2" ry="2" />
+  <rect x="210" y="190" width="140" height="80" fill="#adb5bd" />
+  
+  <!-- Libro -->
+  <rect x="400" y="200" width="120" height="20" fill="#52796f" />
+  <rect x="400" y="220" width="120" height="30" fill="#cad2c5" />
+  
+  <!-- Lámpara de escritorio -->
+  <rect x="550" y="180" width="10" height="70" fill="#495057" />
+  <path d="M550,180 C560,150 590,150 600,180" stroke="#495057" stroke-width="6" fill="none" />
+  <path d="M600,180 L570,180" stroke="#495057" stroke-width="6" fill="none" />
+  <ellipse cx="580" cy="150" rx="15" ry="10" fill="#ffb703" />
+  
+  <!-- Teléfono fijo -->
+  <rect x="120" y="190" width="60" height="20" fill="#6c757d" rx="3" ry="3" />
+  <rect x="130" y="170" width="40" height="20" fill="#6c757d" rx="3" ry="3" />
+  
+  <!-- Planta pequeña -->
+  <rect x="650" y="190" width="30" height="40" fill="#2d6a4f" rx="3" ry="3" />
+  <ellipse cx="665" cy="180" rx="20" ry="15" fill="#52b788" />
+  <ellipse cx="655" cy="175" rx="5" ry="10" fill="#52b788" />
+  <ellipse cx="675" cy="175" rx="5" ry="10" fill="#52b788" />
+  
+  <!-- VASO (elemento fuera de lugar en un escritorio de oficina) -->
+  <path d="M340,240 L360,190 L380,240 Z" fill="#0077b6" />
+  <ellipse cx="360" cy="240" rx="20" ry="5" fill="#90e0ef" />
+  <ellipse cx="360" cy="190" rx="10" ry="3" fill="#0077b6" />
+  
+  <!-- Reloj de pared (para añadir contexto de oficina) -->
+  <circle cx="400" cy="100" r="40" fill="#dee2e6" stroke="#343a40" stroke-width="3" />
+  <line x1="400" y1="100" x2="400" y2="70" stroke="#343a40" stroke-width="3" />
+  <line x1="400" y1="100" x2="425" y2="100" stroke="#343a40" stroke-width="3" />
+</svg> 
