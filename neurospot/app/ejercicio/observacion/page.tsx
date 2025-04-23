@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { PauseCircle, ArrowRight } from "lucide-react"
 import Image from "next/image"
+import { useMediaQuery } from "@/hooks/use-media-query"
 
 // Definición de tipos para las preguntas
 type Question = {
@@ -28,34 +29,43 @@ type Question = {
 }
 
 export default function ObservacionPage() {
+  const isMobile = useMediaQuery("(max-width: 768px)")
+  
+  // Función para obtener la ruta de imagen correcta según el tamaño de pantalla
+  const getImagePath = (index: number) => {
+    return isMobile 
+      ? `/ejercicios/observacion/mobile/imagen${index}.jpg` 
+      : `/ejercicios/observacion/imagen${index}.jpg`
+  }
+  
   // Preguntas para el ejercicio de observación
   const questions: Question[] = [
     {
-      image: "/ejercicios/observacion/imagen1.jpg",
+      image: getImagePath(1),
       question: "¿Cuántos objetos circulares hay en la imagen?",
       options: ["3", "4", "5", "6"],
       correctAnswer: 2
     },
     {
-      image: "/ejercicios/observacion/imagen2.jpg",
+      image: getImagePath(2),
       question: "¿Qué color predomina en la esquina superior derecha?",
       options: ["Azul", "Verde", "Rojo", "Amarillo"],
       correctAnswer: 0
     },
     {
-      image: "/ejercicios/observacion/imagen3.jpg",
+      image: getImagePath(3),
       question: "¿Cuántas personas aparecen en la imagen?",
       options: ["Ninguna", "1", "2", "3 o más"],
       correctAnswer: 1
     },
     {
-      image: "/ejercicios/observacion/imagen4.jpg",
+      image: getImagePath(4),
       question: "¿Qué elemento está fuera de lugar en esta imagen?",
       options: ["El reloj", "El libro", "La planta", "El vaso"],
       correctAnswer: 3
     },
     {
-      image: "/ejercicios/observacion/imagen5.jpg",
+      image: getImagePath(5),
       question: "¿Cuántos elementos de color rojo hay en la imagen?",
       options: ["Ninguno", "1", "2", "3"],
       correctAnswer: 2
@@ -180,6 +190,8 @@ export default function ObservacionPage() {
                       alt={`Imagen para observación ${currentQuestionIndex + 1}`}
                       fill
                       style={{ objectFit: "cover" }}
+                      sizes="(max-width: 768px) 100vw, 768px"
+                      priority
                     />
                   </div>
 

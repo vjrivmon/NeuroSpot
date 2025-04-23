@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg width="800" height="600" xmlns="http://www.w3.org/2000/svg">
+  <!-- Fondo claro -->
+  <rect width="800" height="600" fill="#f8f9fa" />
+  
+  <!-- 5 objetos circulares -->
+  <!-- 1. Círculo grande rojo -->
+  <circle cx="200" cy="150" r="70" fill="#e63946" stroke="#333" stroke-width="2" />
+  
+  <!-- 2. Círculo azul mediano -->
+  <circle cx="600" cy="200" r="55" fill="#457b9d" stroke="#333" stroke-width="2" />
+  
+  <!-- 3. Círculo amarillo pequeño -->
+  <circle cx="400" cy="400" r="40" fill="#ffb703" stroke="#333" stroke-width="2" />
+  
+  <!-- 4. Círculo verde grande -->
+  <circle cx="150" cy="450" r="60" fill="#2a9d8f" stroke="#333" stroke-width="2" />
+  
+  <!-- 5. Círculo morado mediano -->
+  <circle cx="650" cy="420" r="50" fill="#9d4edd" stroke="#333" stroke-width="2" />
+  
+  <!-- Algunos elementos decorativos no circulares para añadir complejidad -->
+  <rect x="300" y="100" width="80" height="80" fill="#f4a261" rx="5" ry="5" />
+  <rect x="500" y="300" width="100" height="60" fill="#a8dadc" rx="5" ry="5" />
+  <polygon points="250,300 300,250 350,300 300,350" fill="#e9c46a" />
+</svg> 
