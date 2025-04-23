@@ -461,80 +461,67 @@ export default function VideoPage() {
                         </Button>
                       </div>
                     </div>
+                  ) : manualMode ? (
+                    /* Contenido del modo manual */
+                    <div className="flex items-center justify-center w-full h-full">
+                      <div className="text-center p-6 bg-black/80 rounded-lg text-white max-w-md">
+                        <h3 className="font-medium mb-3 text-lg">Modo audio activo</h3>
+                        <p className="mb-3 text-sm">
+                          Estás realizando la prueba con audio solamente.
+                        </p>
+                        <div className="mt-5">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="bg-white text-black hover:bg-gray-200"
+                            onClick={finishManually}
+                          >
+                            He terminado la actividad
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
                   ) : (
+                    /* Modo cámara directo (sin usar estilos absolute que puedan causar problemas) */
+                    <div className="w-full h-full flex items-center justify-center">
+                      <video 
+                        ref={videoRef} 
+                        className="max-w-full max-h-full"
+                        style={{ 
+                          display: 'block', 
+                          width: '100%', 
+                          height: 'auto',
+                          backgroundColor: 'black'
+                        }}
+                        playsInline
+                        autoPlay
+                        muted
+                      />
+                    </div>
+                  )}
+                  
+                  {/* Indicadores de grabación - siempre visibles si hay permiso */}
+                  {cameraPermission && (
                     <>
-                      {!manualMode && (
-                        <>
-                          {/* Video en vivo (ahora visible) */}
-                          <video 
-                            ref={videoRef} 
-                            className="absolute inset-0 w-full h-full object-cover"
-                            playsInline 
-                            muted
-                            autoPlay
-                          />
-                          
-                          {/* Canvas visible solo si hay problemas con el video directo */}
-                          <canvas 
-                            ref={canvasRef}
-                            className="absolute inset-0 w-full h-full object-cover"
-                            style={{ display: 'none' }}
-                          />
-                          
-                          {/* Imagen de respaldo que muestra fotogramas (método alternativo) */}
-                          {videoFrameSrc && (
-                            <img 
-                              src={videoFrameSrc} 
-                              alt="Vista de cámara" 
-                              className="absolute inset-0 w-full h-full object-cover"
-                              style={{ display: 'none' }}
-                              onLoad={(e) => {
-                                const video = videoRef.current;
-                                // Si el video está vacío, mostrar la imagen
-                                if (video && video.readyState < 2) {
-                                  e.currentTarget.style.display = 'block';
-                                }
-                              }}
-                            />
-                          )}
-                        </>
-                      )}
-                      
-                      {/* Indicador de grabación */}
-                      <div className="absolute top-0 left-0 right-0 p-2 bg-black/50 text-white text-xs text-center">
+                      <div className="absolute top-0 left-0 right-0 p-2 bg-black/50 text-white text-xs text-center z-50">
                         {manualMode ? "Audio activo" : "Cámara activa"} - grabando tu actividad
                       </div>
-                      <div className="absolute bottom-4 right-4 bg-red-500 p-2 rounded-full animate-pulse">
+                      <div className="absolute bottom-4 right-4 bg-red-500 p-2 rounded-full animate-pulse z-50">
                         <div className="w-3 h-3 rounded-full bg-white"></div>
                       </div>
-                      
-                      {/* Solo en modo manual mostramos un mensaje en el área de la cámara */}
-                      {manualMode && (
-                        <div className="flex items-center justify-center">
-                          <div className="text-center p-6 bg-black/80 rounded-lg text-white max-w-md">
-                            <h3 className="font-medium mb-3 text-lg">Modo audio activo</h3>
-                            <p className="mb-3 text-sm">
-                              Estás realizando la prueba con audio solamente.
-                            </p>
-                            <div className="mt-5">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="bg-white text-black hover:bg-gray-200"
-                                onClick={finishManually}
-                              >
-                                He terminado la actividad
-                              </Button>
-                            </div>
-                          </div>
-                        </div>
-                      )}
                     </>
                   )}
+                  
+                  {/* Canvas oculto para captura de fotogramas */}
+                  <canvas 
+                    ref={canvasRef}
+                    className="hidden"
+                    style={{ display: 'none', position: 'absolute', visibility: 'hidden' }}
+                  />
                 </div>
                 
                 {/* Botón para terminar manualmente fuera del área de video */}
-                {!manualMode && (
+                {cameraPermission && !manualMode && (
                   <div className="text-center mt-4">
                     <Button
                       variant="outline"
