@@ -432,11 +432,20 @@ export default function VideoPage() {
                 {/* Instrucciones movidas fuera del marco de la cámara */}
                 <div className="bg-muted/30 p-4 rounded-lg mb-2">
                   <p className="text-sm font-medium mb-1">Instrucciones:</p>
-                  <ol className="text-sm text-left list-decimal pl-5">
-                    <li className="mb-1">Cuenta en voz alta del 1 al 20</li>
-                    <li className="mb-1">Recita el abecedario completo</li>
-                    <li>Mantén la mirada hacia adelante</li>
-                  </ol>
+                  <div className="space-y-3">
+                    <div className="flex items-center">
+                      <div className="bg-primary/20 rounded-full h-6 w-6 flex items-center justify-center text-primary font-bold mr-3">1</div>
+                      <p className="text-sm text-muted-foreground">Cuenta en voz alta del 1 al 20</p>
+                    </div>
+                    <div className="flex items-center">
+                      <div className="bg-primary/20 rounded-full h-6 w-6 flex items-center justify-center text-primary font-bold mr-3">2</div>
+                      <p className="text-sm text-muted-foreground">Recita el abecedario completo</p>
+                    </div>
+                    <div className="flex items-center">
+                      <div className="bg-primary/20 rounded-full h-6 w-6 flex items-center justify-center text-primary font-bold mr-3">3</div>
+                      <p className="text-sm text-muted-foreground">Mantén la mirada hacia adelante</p>
+                    </div>
+                  </div>
                 </div>
                 
                 <div className="relative bg-black rounded-lg overflow-hidden flex-1 flex items-center justify-center">
