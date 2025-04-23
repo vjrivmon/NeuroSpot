@@ -106,8 +106,8 @@ export default function StroopTestPage() {
     <main className="min-h-screen flex flex-col">
       <Header showBackButton />
 
-      <div className="container max-w-full mx-auto px-6 py-8 flex-1 flex flex-col">
-        <Card className="border-none shadow-lg flex-1 flex flex-col w-full max-w-6xl mx-auto">
+      <div className="container max-w-full mx-auto px-6 pt-6 pb-4 flex flex-col">
+        <Card className="border-none shadow-lg flex flex-col w-full max-w-6xl mx-auto h-auto">
           <CardHeader className="pb-4 border-b">
             <div className="flex justify-between items-center">
               <CardTitle className="text-2xl">Test de Stroop</CardTitle>
@@ -124,28 +124,28 @@ export default function StroopTestPage() {
             <Progress value={progress} className="h-2" />
           </CardHeader>
 
-          <CardContent className="flex-1 flex flex-col justify-center items-center space-y-8 py-8">
+          <CardContent className="px-4 pt-3 pb-6 flex flex-col items-center space-y-3 min-h-0">
             {!testCompleted ? (
               <>
-                <div className="text-center space-y-6">
-                  <div className="bg-muted/30 p-4 rounded-lg">
-                    <p className="text-sm text-muted-foreground mb-2">
+                <div className="text-center w-full">
+                  <div className="bg-muted/30 p-2 rounded-lg mb-2">
+                    <p className="text-sm text-muted-foreground">
                       Selecciona el COLOR en que está escrita la palabra, NO lo que dice la palabra.
                     </p>
                   </div>
 
-                  <div className="flex justify-center items-center h-24">
-                    <h2 className="text-4xl font-bold" style={{ color: currentWord.color }}>
+                  <div className="flex justify-center items-center my-2">
+                    <h2 className="text-3xl font-bold" style={{ color: currentWord.color }}>
                       {currentWord.text}
                     </h2>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4 w-full">
+                <div className="grid grid-cols-2 gap-3 w-full">
                   {colors.map((color) => (
                     <Button
                       key={color.name}
-                      className="h-14 text-white font-medium"
+                      className="h-12 text-white font-medium"
                       style={{ backgroundColor: color.value }}
                       onClick={() => handleColorSelect(color.name)}
                     >
@@ -155,20 +155,20 @@ export default function StroopTestPage() {
                 </div>
               </>
             ) : (
-              <div className="flex-1 flex flex-col justify-center items-center py-6 text-center space-y-6">
-                <div className="rounded-full bg-green-100 p-4 dark:bg-green-900/20">
-                  <Check className="h-8 w-8 text-green-600 dark:text-green-400" />
+              <div className="flex flex-col items-center text-center space-y-3 w-full">
+                <div className="rounded-full bg-green-100 p-2 dark:bg-green-900/20">
+                  <Check className="h-5 w-5 text-green-600 dark:text-green-400" />
                 </div>
                 
                 <div>
-                  <h2 className="text-2xl font-bold mb-2">¡Prueba completada!</h2>
-                  <p className="text-muted-foreground mb-6">
+                  <h2 className="text-lg font-bold mb-1">¡Prueba completada!</h2>
+                  <p className="text-muted-foreground text-sm mb-3">
                     Has obtenido una puntuación de {score} sobre {total} ({Math.round((score / total) * 100)}%)
                   </p>
                 </div>
                 
                 <Button 
-                  className="w-full h-14 text-white font-medium bg-[#3876F4] hover:bg-[#3876F4]/90"
+                  className="w-full h-10 text-white font-medium bg-[#3876F4] hover:bg-[#3876F4]/90"
                   onClick={handleContinue}
                 >
                   Continuar con el siguiente ejercicio

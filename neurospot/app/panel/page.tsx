@@ -62,7 +62,7 @@ export default function PanelPage() {
       icon: createIconElement(BrainCog),
       time: "5 min",
       color: "bg-purple-500", 
-      iconColor: "text-purple-600",
+      iconColor: "text-white",
       completed: completedExercises.includes("stroop"),
       isAvailable: true // El primer ejercicio siempre está disponible
     },
@@ -73,7 +73,7 @@ export default function PanelPage() {
       icon: createIconElement(BookOpenText),
       time: "3 min",
       color: "bg-blue-500",
-      iconColor: "text-blue-600",
+      iconColor: "text-white",
       completed: completedExercises.includes("lectura"),
       isAvailable: completedExercises.includes("stroop") || completedExercises.length > 0
     },
@@ -84,7 +84,7 @@ export default function PanelPage() {
       icon: createIconElement(Clock),
       time: "4 min",
       color: "bg-green-500",
-      iconColor: "text-green-600", 
+      iconColor: "text-white", 
       completed: completedExercises.includes("atencion"),
       isAvailable: completedExercises.includes("lectura")
     },
@@ -95,7 +95,7 @@ export default function PanelPage() {
       icon: createIconElement(Database),
       time: "3 min",
       color: "bg-orange-500",
-      iconColor: "text-orange-600",
+      iconColor: "text-white",
       completed: completedExercises.includes("memoria"),
       isAvailable: completedExercises.includes("atencion")
     },
@@ -106,7 +106,7 @@ export default function PanelPage() {
       icon: createIconElement(Eye),
       time: "4 min", 
       color: "bg-teal-500",
-      iconColor: "text-teal-600",
+      iconColor: "text-white",
       completed: completedExercises.includes("observacion"),
       isAvailable: completedExercises.includes("memoria")
     },
@@ -117,7 +117,7 @@ export default function PanelPage() {
       icon: createIconElement(Video),
       time: "3 min",
       color: "bg-pink-500",
-      iconColor: "text-pink-600",
+      iconColor: "text-white",
       completed: completedExercises.includes("video"),
       isAvailable: completedExercises.includes("observacion")
     }
@@ -149,24 +149,22 @@ export default function PanelPage() {
           
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 w-full">
             {ejercicios.map((ejercicio) => (
-              <Link 
-                key={ejercicio.id}
-                href={ejercicio.isAvailable ? `/ejercicio/${ejercicio.id}` : "#"}
-                className={!ejercicio.isAvailable ? "pointer-events-none" : ""}
+              <div 
+                key={ejercicio.id} 
+                className={!ejercicio.isAvailable && !ejercicio.completed ? "opacity-40 filter grayscale" : ""}
               >
-                <div className={!ejercicio.isAvailable && !ejercicio.completed ? "opacity-40 filter grayscale" : ""}>
-                  <ExerciseCard
-                    key={ejercicio.id}
-                    id={ejercicio.id}
-                    title={ejercicio.title}
-                    description={ejercicio.description}
-                    icon={ejercicio.icon}
-                    time={ejercicio.time}
-                    color={ejercicio.color}
-                    iconColor={ejercicio.iconColor}
-                  />
-                </div>
-              </Link>
+                <ExerciseCard
+                  id={ejercicio.id}
+                  title={ejercicio.title}
+                  description={ejercicio.description}
+                  icon={ejercicio.icon}
+                  time={ejercicio.time}
+                  color={ejercicio.color}
+                  iconColor={ejercicio.iconColor}
+                  isAvailable={ejercicio.isAvailable}
+                  completed={ejercicio.completed}
+                />
+              </div>
             ))}
           </div>
           

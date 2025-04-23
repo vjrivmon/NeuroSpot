@@ -21,7 +21,15 @@ export function Header({ showBackButton = false }: HeaderProps) {
             </Button>
           )}
           <Link href="/" className="flex items-center gap-2">
-            <Image src="/logo.svg" alt="NeuroSpot Logo" width={36} height={36} className="h-9 w-9" />
+            <div className="relative h-9 w-9">
+              <Image 
+                src="/logo.svg" 
+                alt="NeuroSpot Logo" 
+                fill 
+                style={{ objectFit: 'contain' }}
+                priority
+              />
+            </div>
             <span className="font-semibold text-lg hidden sm:inline-block">NeuroSpot</span>
           </Link>
         </div>

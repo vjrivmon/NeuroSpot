@@ -43,8 +43,20 @@ export default function ConsentimientoPage() {
           <CardHeader>
             <CardTitle className="text-xl md:text-2xl">Consentimiento Legal</CardTitle>
           </CardHeader>
-          <CardContent>
+          
+          <div className="px-8 pt-6 pb-2">
+            <div className="p-4 mb-4 bg-green-50 border border-green-200 rounded-lg shadow-sm dark:bg-green-900/20 dark:border-green-800">
+              <h3 className="text-lg font-semibold text-green-800 dark:text-green-300 mb-2">¿Cómo funciona?</h3>
+              <p className="text-md text-green-700 dark:text-green-400">
+                Completa todas las pruebas en orden. Cada prueba te ayudará a evaluar diferentes aspectos de tu atención.
+                Al terminar todas las pruebas, podrás ver tus resultados y descargarlos.
+              </p>
+            </div>
+          </div>
+          
+          <CardContent className="px-8 pb-8">
             <form onSubmit={handleSubmit} className="space-y-6">
+              <h3 className="text-lg font-semibold mb-4">Consentimiento Legal</h3>
               <div className="space-y-4 text-sm md:text-base">
                 <p>
                   Como tutor legal, autorizo el uso de esta aplicación para evaluar posibles indicadores de TDAH en el
@@ -67,7 +79,7 @@ export default function ConsentimientoPage() {
                   />
                   <label
                     htmlFor="terms"
-                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                    className="text-sm font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                   >
                     Acepto los términos y condiciones como tutor legal del menor
                   </label>
@@ -84,7 +96,7 @@ export default function ConsentimientoPage() {
               <Button 
                 type="submit" 
                 size="lg" 
-                className="w-full bg-primary hover:bg-primary/90 text-white font-medium"
+                className="w-full shadow-md"
                 disabled={!accepted}
               >
                 Acepto y continuar
