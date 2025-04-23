@@ -146,12 +146,49 @@ export default function ObservacionPage() {
           completedExercises.push("observacion")
           localStorage.setItem("completedExercises", JSON.stringify(completedExercises))
         }
+        
+        // Guardar el resultado del ejercicio en testResultsData
+        const observacionResult = {
+          id: "observacion",
+          name: "Ejercicio de Observación",
+          score: score,  // Puntuación obtenida en el ejercicio
+          maxScore: 100,
+          description: "Evalúa la capacidad de atención a detalles visuales.",
+          feedback: `Has acertado ${score} de ${questions.length} preguntas. ${
+            score >= 4 ? "Excelente atención al detalle visual." : 
+            score >= 2 ? "Buena atención al detalle con algunas dificultades." : 
+            "Se recomienda practicar ejercicios de atención visual."
+          }`,
+          date: new Date().toISOString()
+        };
+        
+        // Actualizar testResultsData
+        try {
+          const savedResultsData = localStorage.getItem("testResultsData");
+          let resultsData = savedResultsData ? JSON.parse(savedResultsData) : [];
+          
+          // Buscar si ya existe un resultado para este test
+          const existingIndex = resultsData.findIndex((test: any) => test.id === "observacion");
+          
+          if (existingIndex >= 0) {
+            // Actualizar el resultado existente
+            resultsData[existingIndex] = observacionResult;
+          } else {
+            // Añadir el nuevo resultado
+            resultsData.push(observacionResult);
+          }
+          
+          // Guardar los resultados actualizados
+          localStorage.setItem("testResultsData", JSON.stringify(resultsData));
+        } catch (e) {
+          console.error("Error updating testResultsData:", e);
+        }
       } catch (e) {
         console.error("Error updating completedExercises:", e)
       }
     }
     
-    router.push("/resultados")
+    router.push("/ejercicio/video")
   }
 
   return (
@@ -244,7 +281,7 @@ export default function ObservacionPage() {
                     className="w-full h-14 text-white font-medium bg-[#3876F4] hover:bg-[#3876F4]/90"
                     onClick={completeExercise}
                   >
-                    <ArrowRight className="mr-2 h-4 w-4" /> Ver resultados
+                    <ArrowRight className="mr-2 h-4 w-4" /> Siguiente ejercicio
                   </Button>
                 </div>
               </div>
