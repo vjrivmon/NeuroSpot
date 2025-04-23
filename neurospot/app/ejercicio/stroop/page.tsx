@@ -33,29 +33,32 @@ export default function StroopTestPage() {
   const [total, setTotal] = useState(0)
   const [showDialog, setShowDialog] = useState(false)
   const [testCompleted, setTestCompleted] = useState(false)
+  const [gameStarted, setGameStarted] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
-    generateNewWord()
+    if (gameStarted) {
+      generateNewWord()
 
-    const timer = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer)
-          completeTest()
-          return 0
-        }
-        return prev - 1
-      })
+      const timer = setInterval(() => {
+        setTimeLeft((prev) => {
+          if (prev <= 1) {
+            clearInterval(timer)
+            completeTest()
+            return 0
+          }
+          return prev - 1
+        })
 
-      setProgress((prev) => {
-        const newProgress = prev + 100 / 60
-        return newProgress > 100 ? 100 : newProgress
-      })
-    }, 1000)
+        setProgress((prev) => {
+          const newProgress = prev + 100 / 60
+          return newProgress > 100 ? 100 : newProgress
+        })
+      }, 1000)
 
-    return () => clearInterval(timer)
-  }, [])
+      return () => clearInterval(timer)
+    }
+  }, [gameStarted])
 
   const generateNewWord = () => {
     const randomWordIndex = Math.floor(Math.random() * colors.length)
@@ -86,7 +89,7 @@ export default function StroopTestPage() {
     if (typeof window !== 'undefined') {
       try {
         const saved = localStorage.getItem("completedExercises") 
-        let completedExercises = saved ? JSON.parse(saved) : []
+        const completedExercises = saved ? JSON.parse(saved) : []
         
         if (!completedExercises.includes("stroop")) {
           completedExercises.push("stroop")
@@ -102,6 +105,14 @@ export default function StroopTestPage() {
     router.push("/ejercicio/lectura")
   }
 
+  const startGame = () => {
+    setGameStarted(true)
+    setProgress(0)
+    setTimeLeft(60)
+    setScore(0)
+    setTotal(0)
+  }
+
   return (
     <main className="min-h-screen flex flex-col">
       <Header showBackButton />
@@ -111,7 +122,13 @@ export default function StroopTestPage() {
           <CardHeader className="pb-4 border-b">
             <div className="flex justify-between items-center">
               <CardTitle className="text-2xl">Test de Stroop</CardTitle>
-              <Button variant="ghost" size="icon" onClick={() => setShowDialog(true)} aria-label="Pausar ejercicio">
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                onClick={() => setShowDialog(true)} 
+                aria-label="Pausar ejercicio"
+                disabled={!gameStarted}
+              >
                 <PauseCircle className="h-6 w-6" />
               </Button>
             </div>
@@ -125,7 +142,51 @@ export default function StroopTestPage() {
           </CardHeader>
 
           <CardContent className="px-4 pt-3 pb-6 flex flex-col items-center space-y-3 min-h-0">
-            {!testCompleted ? (
+            {!gameStarted ? (
+              <div className="text-center w-full">
+                <div className="bg-muted/30 p-6 rounded-lg">
+                  <h3 className="text-lg font-medium mb-3">Juego de Colores</h3>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    ¡Este es un juego divertido para poner a prueba tu atención!
+                  </p>
+                  
+                  <h3 className="text-md font-medium mb-2">¿Cómo jugar?</h3>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Verás palabras de colores escritas en diferentes colores.
+                    <br/>
+                    <span className="font-bold">¡Importante!</span> Tienes que pulsar el botón del COLOR que ves, 
+                    no lo que dice la palabra.
+                  </p>
+                  
+                  <div className="border p-4 rounded-lg mb-4">
+                    <h4 className="text-sm font-medium mb-2">Ejemplo:</h4>
+                    <div className="flex justify-center items-center mb-3">
+                      <h2 className="text-2xl font-bold" style={{ color: "#3b82f6" }}>
+                        Rojo
+                      </h2>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      La palabra dice Rojo pero está escrita en color <span className="font-bold text-blue-500">Azul</span>.
+                      <br/>
+                      <span className="font-bold">¡Debes pulsar el botón Azul!</span>
+                    </p>
+                  </div>
+                  
+                  <p className="text-sm text-muted-foreground">
+                    Tienes 60 segundos para jugar.
+                    <br/>
+                    <span className="font-bold">¡A divertirse!</span>
+                  </p>
+                </div>
+                
+                <Button 
+                  className="w-full h-14 text-white font-medium bg-[#3876F4] hover:bg-[#3876F4]/90 mt-6"
+                  onClick={startGame}
+                >
+                  ¡Empezar a jugar!
+                </Button>
+              </div>
+            ) : !testCompleted ? (
               <>
                 <div className="text-center w-full">
                   <div className="bg-muted/30 p-2 rounded-lg mb-2">
