@@ -33,7 +33,7 @@ export default function StroopTestPage() {
   const [total, setTotal] = useState(0)
   const [showDialog, setShowDialog] = useState(false)
   const [testCompleted, setTestCompleted] = useState(false)
-  const [gameStarted, setGameStarted] = useState(false)
+  const [gameStarted, setGameStarted] = useState(true)
   const router = useRouter()
 
   useEffect(() => {
@@ -105,14 +105,6 @@ export default function StroopTestPage() {
     router.push("/ejercicio/lectura")
   }
 
-  const startGame = () => {
-    setGameStarted(true)
-    setProgress(0)
-    setTimeLeft(60)
-    setScore(0)
-    setTotal(0)
-  }
-
   return (
     <main className="min-h-screen flex flex-col">
       <Header showBackButton />
@@ -142,57 +134,38 @@ export default function StroopTestPage() {
           </CardHeader>
 
           <CardContent className="px-4 pt-3 pb-6 flex flex-col items-center space-y-3 min-h-0">
-            {!gameStarted ? (
-              <div className="text-center w-full">
-                <div className="bg-muted/30 p-6 rounded-lg">
-                  <h3 className="text-lg font-medium mb-3">Juego de Colores</h3>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    ¡Este es un juego divertido para poner a prueba tu atención!
-                  </p>
-                  
-                  <h3 className="text-md font-medium mb-2">¿Cómo jugar?</h3>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    Verás palabras de colores escritas en diferentes colores.
-                    <br/>
-                    <span className="font-bold">¡Importante!</span> Tienes que pulsar el botón del COLOR que ves, 
-                    no lo que dice la palabra.
-                  </p>
-                  
-                  <div className="border p-4 rounded-lg mb-4">
-                    <h4 className="text-sm font-medium mb-2">Ejemplo:</h4>
-                    <div className="flex justify-center items-center mb-3">
-                      <h2 className="text-2xl font-bold" style={{ color: "#3b82f6" }}>
-                        Rojo
-                      </h2>
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      La palabra dice Rojo pero está escrita en color <span className="font-bold text-blue-500">Azul</span>.
-                      <br/>
-                      <span className="font-bold">¡Debes pulsar el botón Azul!</span>
-                    </p>
-                  </div>
-                  
-                  <p className="text-sm text-muted-foreground">
-                    Tienes 60 segundos para jugar.
-                    <br/>
-                    <span className="font-bold">¡A divertirse!</span>
-                  </p>
-                </div>
-                
-                <Button 
-                  className="w-full h-14 text-white font-medium bg-[#3876F4] hover:bg-[#3876F4]/90 mt-6"
-                  onClick={startGame}
-                >
-                  ¡Empezar a jugar!
-                </Button>
-              </div>
-            ) : !testCompleted ? (
+            {!testCompleted ? (
               <>
                 <div className="text-center w-full">
-                  <div className="bg-muted/30 p-2 rounded-lg mb-2">
-                    <p className="text-sm text-muted-foreground">
-                      Selecciona el COLOR en que está escrita la palabra, NO lo que dice la palabra.
-                    </p>
+                  <div className="bg-muted/30 p-2 rounded-lg mb-4">
+                    <div className="space-y-3">
+                      <div className="flex items-center">
+                        <div className="w-8 h-8 rounded-full bg-[#3876F4] text-white flex items-center justify-center mr-3 flex-shrink-0">
+                          <span className="font-bold">1</span>
+                        </div>
+                        <p className="text-sm text-muted-foreground text-left">
+                          Selecciona el COLOR en que está escrita la palabra.
+                        </p>
+                      </div>
+                      
+                      <div className="flex items-center">
+                        <div className="w-8 h-8 rounded-full bg-[#3876F4] text-white flex items-center justify-center mr-3 flex-shrink-0">
+                          <span className="font-bold">2</span>
+                        </div>
+                        <p className="text-sm text-muted-foreground text-left">
+                          NO selecciones lo que dice la palabra.
+                        </p>
+                      </div>
+                      
+                      <div className="flex items-center">
+                        <div className="w-8 h-8 rounded-full bg-[#3876F4] text-white flex items-center justify-center mr-3 flex-shrink-0">
+                          <span className="font-bold">3</span>
+                        </div>
+                        <p className="text-sm text-muted-foreground text-left">
+                          Responde lo más rápido posible.
+                        </p>
+                      </div>
+                    </div>
                   </div>
 
                   <div className="flex justify-center items-center my-2">

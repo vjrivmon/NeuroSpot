@@ -443,22 +443,27 @@ export default function AtencionPage() {
                   </p>
                   <div className="flex items-start space-y-3 flex-col">
                     <div className="flex items-center gap-2">
-                      <div className="bg-primary/20 rounded-full h-6 w-6 flex items-center justify-center text-primary font-bold">1</div>
-                      <p className="text-sm">
+                    <div className="w-8 h-8 rounded-full bg-[#3876F4] text-white flex items-center justify-center mr-3 flex-shrink-0">
+                        <span className="font-bold">1</span>
+                      </div>
+                                            <p className="text-sm">
                         Pulsa el botón <span className="font-bold">SOLO</span> cuando veas la letra <span className="font-bold text-primary">{targetLetter}</span>
                       </p>
                     </div>
                     
                     <div className="flex items-center gap-2">
-                      <div className="bg-primary/20 rounded-full h-6 w-6 flex items-center justify-center text-primary font-bold">2</div>
-                      <p className="text-sm">
+                    <div className="w-8 h-8 rounded-full bg-[#3876F4] text-white flex items-center justify-center mr-3 flex-shrink-0">
+                        <span className="font-bold">2</span>
+                      </div>
+                                            <p className="text-sm">
                         La prueba dura 1 minuto y tiene 3 niveles de dificultad
                       </p>
                     </div>
                     
                     <div className="flex items-center gap-2">
-                      <div className="bg-primary/20 rounded-full h-6 w-6 flex items-center justify-center text-primary font-bold">3</div>
-                      <p className="text-sm">
+                    <div className="w-8 h-8 rounded-full bg-[#3876F4] text-white flex items-center justify-center mr-3 flex-shrink-0">
+                        <span className="font-bold">3</span>
+                      </div>                      <p className="text-sm">
                         Las letras aparecerán cada vez más rápido
                       </p>
                     </div>

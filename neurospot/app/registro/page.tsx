@@ -235,9 +235,9 @@ export default function RegistroPage() {
                           />
                         </FormControl>
                         <div className="space-y-1 leading-none">
-                          <FormLabel>Necesita apoyo educativo en clase</FormLabel>
+                          <FormLabel>Recibe apoyo educativo en clase</FormLabel>
                           <FormDescription>
-                            Marque esta casilla si el niño recibe algún tipo de apoyo especial
+                            Marque esta casilla si el niño cuenta con algún tipo de apoyo especial
                           </FormDescription>
                         </div>
                       </FormItem>

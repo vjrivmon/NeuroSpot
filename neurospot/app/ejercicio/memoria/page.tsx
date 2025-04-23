@@ -152,8 +152,9 @@ export default function MemoriaPage() {
           <CardContent className="px-4 pt-3 pb-6 flex flex-col items-center space-y-3 min-h-0">
             {step === "instructions" && (
               <div className="space-y-6 text-center w-full">
-                <h2 className="text-2xl font-bold text-[#3876F4]">Instrucciones</h2>
-                
+ <p className="text-sm text-muted-foreground mb-3 font-medium">
+                    Instrucciones:
+                  </p>                
                 <div className="bg-muted/30 p-4 rounded-lg w-full">
                   <div className="space-y-4">
                     <div className="flex items-center">
