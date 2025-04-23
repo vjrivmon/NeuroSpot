@@ -56,6 +56,7 @@ export default function ResultadosPage() {
   const [totalScore, setTotalScore] = useState(0)
   const [riskLevel, setRiskLevel] = useState<'bajo' | 'moderado' | 'alto'>('bajo')
   const [completedTests, setCompletedTests] = useState<string[]>([])
+  const [testResults, setTestResults] = useState<TestResult[]>([])
   
   useEffect(() => {
     // Formatear fecha actual
@@ -66,8 +67,9 @@ export default function ResultadosPage() {
       day: 'numeric' 
     }))
     
-    // Cargar ejercicios completados (simulado)
+    // Cargar ejercicios completados desde localStorage
     if (typeof window !== 'undefined') {
+      // Cargar ejercicios completados
       const saved = localStorage.getItem("completedExercises")
       if (saved) {
         try {
@@ -76,14 +78,70 @@ export default function ResultadosPage() {
           console.error("Error parsing completedExercises:", e)
         }
       }
+      
+      // Cargar resultados de pruebas desde localStorage
+      const savedResultsData = localStorage.getItem("testResultsData")
+      if (savedResultsData) {
+        try {
+          const loadedResults = JSON.parse(savedResultsData);
+          // Asegurar que cada resultado tiene el icono y colorClass necesarios
+          const formattedResults = loadedResults.map((result: any) => {
+            // Asignar icono según el ID
+            let icon;
+            let colorClass;
+            
+            switch (result.id) {
+              case "stroop":
+                icon = <Brain className="h-6 w-6" />;
+                colorClass = "border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950";
+                break;
+              case "lectura":
+                icon = <BookOpen className="h-6 w-6" />;
+                colorClass = "border-purple-200 bg-purple-50 dark:border-purple-800 dark:bg-purple-950";
+                break;
+              case "atencion":
+                icon = <Clock className="h-6 w-6" />;
+                colorClass = "border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950";
+                break;
+              case "memoria":
+                icon = <Eye className="h-6 w-6" />;
+                colorClass = "border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950";
+                break;
+              case "observacion":
+                icon = <Eye className="h-6 w-6" />;
+                colorClass = "border-rose-200 bg-rose-50 dark:border-rose-800 dark:bg-rose-950";
+                break;
+              case "video":
+                icon = <Camera className="h-6 w-6" />;
+                colorClass = "border-indigo-200 bg-indigo-50 dark:border-indigo-800 dark:bg-indigo-950";
+                break;
+              default:
+                icon = <Info className="h-6 w-6" />;
+                colorClass = "border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950";
+            }
+            
+            return {
+              ...result,
+              icon,
+              colorClass
+            };
+          });
+          
+          setTestResults(formattedResults);
+        } catch (e) {
+          console.error("Error parsing testResultsData:", e);
+          // Si hay error, usar datos de respaldo
+          setTestResults(defaultTestResults.filter(test => completedTests.includes(test.id)));
+        }
+      } else {
+        // Si no hay datos guardados, filtrar los datos por defecto según las pruebas completadas
+        setTestResults(defaultTestResults.filter(test => completedTests.includes(test.id)));
+      }
     }
-    
-    // En una implementación real, aquí cargaríamos los resultados desde una API o base de datos
   }, [])
   
-  // Resultados simulados para los ejercicios
-  // En una implementación real, esto vendría de una API o base de datos
-  const testResults: TestResult[] = [
+  // Datos predeterminados para pruebas (sólo se usarán si no hay datos en localStorage)
+  const defaultTestResults: TestResult[] = [
     {
       id: "stroop",
       name: "Test de Stroop",
@@ -134,6 +192,16 @@ export default function ResultadosPage() {
       icon: <Camera className="h-6 w-6" />,
       colorClass: "border-rose-200 bg-rose-50 dark:border-rose-800 dark:bg-rose-950",
     },
+    {
+      id: "video",
+      name: "Análisis de Comportamiento por Video",
+      score: 78,
+      maxScore: 100,
+      description: "Evalúa las expresiones faciales, contacto visual y seguimiento de instrucciones.",
+      feedback: "Buen seguimiento de instrucciones. Movimientos faciales adecuados con algunas inconsistencias menores.",
+      icon: <Camera className="h-6 w-6" />,
+      colorClass: "border-indigo-200 bg-indigo-50 dark:border-indigo-800 dark:bg-indigo-950",
+    }
   ];
   
   // Filtrar solo las pruebas completadas
@@ -171,14 +239,94 @@ export default function ResultadosPage() {
         const reportElement = document.getElementById('report-content');
         if (!reportElement) return;
         
-        const pdf = new jsPDF({
-          orientation: 'portrait',
-          unit: 'mm',
-          format: 'a4'
+        // Crear una versión optimizada para PDF
+        const pdfContainer = document.createElement('div');
+        pdfContainer.style.width = '800px';
+        pdfContainer.style.padding = '40px';
+        pdfContainer.style.position = 'absolute';
+        pdfContainer.style.left = '-9999px';
+        pdfContainer.style.backgroundColor = 'white';
+        
+        // Crear contenido personalizado para el PDF
+        let testsHtml = '';
+        filteredResults.forEach(test => {
+          testsHtml += `
+            <div style="margin-bottom: 25px; padding: 15px; border-radius: 8px; background-color: #f5f8ff; border: 1px solid #e2e8f0;">
+              <h3 style="color: #3876F4; margin-top: 0; margin-bottom: 10px;">${test.name}</h3>
+              <p style="margin-bottom: 8px;"><strong>Puntuación:</strong> ${test.score}/${test.maxScore}</p>
+              <p style="margin-bottom: 8px;"><strong>Descripción:</strong> ${test.description}</p>
+              <p style="margin-bottom: 0;"><strong>Observaciones:</strong> ${test.feedback}</p>
+            </div>
+          `;
         });
         
-        html2canvas(reportElement).then(canvas => {
+        // Obtener recomendaciones según el nivel de riesgo
+        let recomendaciones = '';
+        if (riskLevel === 'bajo') {
+          recomendaciones = `
+            <li>Continuar con las actividades actuales.</li>
+            <li>Realizar evaluaciones periódicas cada 6 meses para monitorear el progreso.</li>
+            <li>Mantener una rutina de ejercicios cognitivos regulares.</li>
+          `;
+        } else if (riskLevel === 'moderado') {
+          recomendaciones = `
+            <li>Establecer un programa regular de ejercicios de atención y concentración.</li>
+            <li>Considerar la realización de evaluaciones más frecuentes (cada 3 meses).</li>
+            <li>Implementar estrategias de organización y planificación en actividades diarias.</li>
+          `;
+        } else {
+          recomendaciones = `
+            <li>Consultar con un especialista en neuropsicología o psicopedagogía.</li>
+            <li>Diseñar un plan de intervención personalizado.</li>
+            <li>Realizar evaluaciones mensuales para monitorear avances.</li>
+            <li>Considerar adaptaciones específicas en entornos de aprendizaje.</li>
+          `;
+        }
+        
+        // Añadir contenido al contenedor del PDF
+        pdfContainer.innerHTML = `
+          <div style="font-family: Arial, sans-serif;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;">
+              <h1 style="color: #3876F4; margin: 0;">Informe de Evaluación NeuroSpot</h1>
+              <p style="margin: 0;">${currentDate}</p>
+            </div>
+            
+            <div style="margin-bottom: 30px; padding: 20px; background-color: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0;">
+              <h2 style="color: #333; margin-top: 0; margin-bottom: 15px;">Resumen de Resultados</h2>
+              <p style="margin-bottom: 10px;"><strong>Número de pruebas completadas:</strong> ${filteredResults.length}</p>
+              <p style="margin-bottom: 10px;"><strong>Puntuación global:</strong> ${totalScore}/100</p>
+              <p style="margin-bottom: 0;"><strong>Nivel de riesgo:</strong> <span style="color: ${
+                riskLevel === 'bajo' ? '#16a34a' : riskLevel === 'moderado' ? '#d97706' : '#dc2626'
+              };">${riskLevel.charAt(0).toUpperCase() + riskLevel.slice(1)}</span></p>
+            </div>
+            
+            <h2 style="color: #333; margin-bottom: 20px;">Resultados Detallados</h2>
+            ${testsHtml}
+            
+            <h2 style="color: #333; margin-bottom: 15px;">Recomendaciones</h2>
+            <ul>
+              ${recomendaciones}
+            </ul>
+            
+            <div style="margin-top: 50px; border-top: 1px solid #e2e8f0; padding-top: 20px;">
+              <p style="color: #666; font-size: 0.9em;">Este informe ha sido generado automáticamente por la plataforma NeuroSpot el ${currentDate}.</p>
+              <p style="color: #666; font-size: 0.9em;">Los resultados deben ser interpretados por un profesional calificado.</p>
+            </div>
+          </div>
+        `;
+        
+        document.body.appendChild(pdfContainer);
+        
+        html2canvas(pdfContainer).then(canvas => {
+          document.body.removeChild(pdfContainer);
+          
           const imgData = canvas.toDataURL('image/png');
+          const pdf = new jsPDF({
+            orientation: 'portrait',
+            unit: 'mm',
+            format: 'a4'
+          });
+          
           const imgWidth = 210; // A4 width en mm
           const imgHeight = canvas.height * imgWidth / canvas.width;
           
