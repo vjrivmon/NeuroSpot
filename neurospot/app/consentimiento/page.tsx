@@ -27,13 +27,21 @@ export default function ConsentimientoPage() {
   }
 
   return (
-    <main className="min-h-screen flex flex-col">
+    <main className="min-h-screen flex flex-col overflow-x-hidden">
       <Header showBackButton />
 
-      <div className="flex-1 container max-w-full mx-auto px-6 py-4 flex flex-col justify-center rounded-lg">
-        <Card className="border-none shadow-lg w-full max-w-2xl mx-auto rounded-xl border border-blue-100 dark:border-blue-900 overflow-hidden">
-          <CardHeader className="bg-white dark:bg-white-950/50 border-b border-blue-100 dark:border-blue-900">
-            <CardTitle className="text-xl md:text-2xl">Antes de comenzar...</CardTitle>
+      <div className="flex-1 w-full px-4 py-8 flex flex-col justify-center">
+        <div className="w-full max-w-4xl mx-auto p-4 mb-6 bg-yellow-50 border border-yellow-200 rounded-lg shadow-sm dark:bg-yellow-900/20 dark:border-yellow-800">
+          <h3 className="text-lg font-semibold text-yellow-800 dark:text-yellow-300 mb-2">¿Cómo funciona?</h3>
+          <p className="text-sm text-yellow-700 dark:text-yellow-400">
+            Completa todas las pruebas en orden. Cada prueba te ayudará a evaluar diferentes aspectos de tu atención.
+            Al terminar todas las pruebas, podrás ver tus resultados y descargarlos.
+          </p>
+        </div>
+        
+        <Card className="border-none shadow-lg w-full max-w-4xl mx-auto">
+          <CardHeader>
+            <CardTitle className="text-xl md:text-2xl">Consentimiento Legal</CardTitle>
           </CardHeader>
           
           <div className="px-8 pt-6 pb-2">
