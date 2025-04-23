@@ -224,6 +224,16 @@ export default function VideoPage() {
     }, 3000);
   };
 
+  const completeExercise = () => {
+    router.push("/resultados");
+  };
+
+  // Función de reporte de PDF que ya no se usará pero se mantiene por compatibilidad
+  const handleDownloadReport = () => {
+    // Redirigir a resultados en lugar de descargar PDF
+    router.push("/resultados");
+  };
+
   // Solicitar permiso para la cámara y comenzar la grabación
   const startRecording = async () => {
     try {
@@ -234,10 +244,13 @@ export default function VideoPage() {
         throw new Error("Tu navegador no soporta acceso a la cámara");
       }
       
-      // Solicitar acceso a la cámara con configuración explícita
+      // Primero preguntar al usuario qué medio prefiere usar
+      const useCamera = window.confirm("¿Deseas usar la cámara para esta actividad? Presiona 'Cancelar' si prefieres usar solo audio.");
+      
+      // Solicitar acceso según la elección del usuario
       const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: true, // Usar configuración más simple para mayor compatibilidad
-        audio: false 
+        video: useCamera, 
+        audio: !useCamera // Si no usa cámara, pedir audio
       });
       
       // Guardar referencia al stream
@@ -248,80 +261,27 @@ export default function VideoPage() {
         videoRef.current.srcObject = stream;
         
         // Asegurarse de que el video se inicie
-        try {
-          await videoRef.current.play();
-          console.log("Video playback started successfully");
-          
-          // Iniciar la renderización en el canvas como método principal
-          requestAnimationFrame(drawVideoToCanvas);
-          
-          // También configurar un método de respaldo capturando fotogramas periódicamente
-          frameIntervalRef.current = setInterval(captureVideoFrame, 1000); // Capturar un fotograma cada segundo
-          
-        } catch (playError) {
-          console.error("Error starting video playback:", playError);
+        videoRef.current.onloadedmetadata = () => {
+          videoRef.current?.play().catch(e => {
+            console.error("Error al iniciar reproducción:", e);
+          });
+        };
+        
+        // Iniciar la animación de canvas solo si hay video
+        if (useCamera) {
+          videoRef.current.addEventListener('play', () => {
+            // Iniciar la captura de frames
+            animationRef.current = requestAnimationFrame(drawVideoToCanvas);
+            
+            // Capturar frames cada 500ms como respaldo
+            frameIntervalRef.current = setInterval(captureVideoFrame, 500);
+          });
+        } else {
+          // Si solo es audio, usar el modo manual
+          setManualMode(true);
         }
       }
       
-      // Configurar MediaRecorder con opciones más compatibles
-      let options = {};
-      // Detectar el formato más compatible según el navegador
-      if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
-        options = { mimeType: 'video/webm;codecs=vp9' };
-      } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8')) {
-        options = { mimeType: 'video/webm;codecs=vp8' };
-      } else if (MediaRecorder.isTypeSupported('video/webm')) {
-        options = { mimeType: 'video/webm' };
-      } else if (MediaRecorder.isTypeSupported('video/mp4')) {
-        options = { mimeType: 'video/mp4' };
-      }
-      
-      const mediaRecorder = new MediaRecorder(stream, options);
-      mediaRecorderRef.current = mediaRecorder;
-      
-      const chunks: BlobPart[] = [];
-      
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          chunks.push(e.data);
-        }
-      };
-      
-      mediaRecorder.onstop = () => {
-        // Determinar el tipo MIME correcto para el blob
-        let mimeType = 'video/webm';
-        if (options.mimeType) {
-          // Usar el tipo MIME determinado anteriormente
-          mimeType = options.mimeType;
-        }
-        
-        const blob = new Blob(chunks, { type: mimeType });
-        // Aquí enviaríamos el blob al servidor para análisis
-        console.log("Video grabado:", blob);
-        
-        // Cancelar el loop de animación
-        if (animationRef.current) {
-          cancelAnimationFrame(animationRef.current);
-          animationRef.current = null;
-        }
-        
-        // Detener la captura de fotogramas
-        if (frameIntervalRef.current) {
-          clearInterval(frameIntervalRef.current);
-          frameIntervalRef.current = null;
-        }
-        
-        // Liberar recursos de la cámara
-        if (streamRef.current) {
-          streamRef.current.getTracks().forEach(track => track.stop());
-        }
-        
-        // Analizar el video (simulado)
-        analyzeVideoContent();
-      };
-      
-      // Solicitar datos cada segundo (no esperar hasta que termine)
-      mediaRecorder.start(1000);
       setCameraPermission(true);
       setStep("recording");
       
@@ -331,6 +291,7 @@ export default function VideoPage() {
           if (prev <= 1) {
             clearInterval(intervalId);
             stopRecording();
+            analyzeVideoContent();
             return 0;
           }
           setProgress(((60 - prev + 1) / 60) * 100);
@@ -338,20 +299,10 @@ export default function VideoPage() {
         });
       }, 1000);
       
-    } catch (error: any) {
-      console.error("Error al acceder a la cámara:", error);
+    } catch (error) {
+      console.error("Error al acceder a los dispositivos multimedia:", error);
+      setCameraError("No se pudo acceder a la cámara o micrófono. Verifica los permisos.");
       setCameraPermission(false);
-      
-      // Mensajes de error más específicos
-      if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
-        setCameraError("Permiso para usar la cámara denegado. Por favor, permite el acceso a la cámara.");
-      } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
-        setCameraError("No se pudo encontrar una cámara en tu dispositivo.");
-      } else if (error.name === 'NotReadableError' || error.name === 'TrackStartError') {
-        setCameraError("Tu cámara está siendo utilizada por otra aplicación.");
-      } else {
-        setCameraError(`Error al acceder a la cámara: ${error.message || "Error desconocido"}`);
-      }
     }
   };
 
@@ -359,77 +310,6 @@ export default function VideoPage() {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
       mediaRecorderRef.current.stop();
     }
-  };
-
-  const completeExercise = () => {
-    router.push("/resultados");
-  };
-
-  // Generar y descargar PDF con los resultados
-  const handleDownloadReport = () => {
-    import('jspdf').then(({ default: jsPDF }) => {
-      import('html2canvas').then(({ default: html2canvas }) => {
-        // Crear elemento temporal para el informe
-        const reportContainer = document.createElement('div');
-        reportContainer.style.width = '800px';
-        reportContainer.style.padding = '40px';
-        reportContainer.style.position = 'absolute';
-        reportContainer.style.left = '-9999px';
-        
-        // Añadir contenido al informe
-        reportContainer.innerHTML = `
-          <div style="font-family: Arial, sans-serif;">
-            <h1 style="color: #3876F4; margin-bottom: 20px;">Informe de Evaluación NeuroSpot</h1>
-            <p style="margin-bottom: 10px;"><strong>Fecha:</strong> ${new Date().toLocaleDateString('es-ES')}</p>
-            <hr style="margin: 20px 0; border: 1px solid #eee;">
-            
-            <h2 style="color: #333; margin-bottom: 15px;">Resultados de Análisis de Comportamiento por Video</h2>
-            <div style="background-color: #f5f8ff; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
-              <h3 style="color: #3876F4; margin-top: 0;">Puntuación: ${videoScore}/100</h3>
-              <p style="margin-bottom: 0;"><strong>Análisis:</strong> ${analysisResult}</p>
-            </div>
-            
-            <h2 style="color: #333; margin-bottom: 15px;">Recomendaciones</h2>
-            <p>Basado en los resultados de la evaluación, le recomendamos:</p>
-            <ul>
-              ${videoScore >= 85 ? 
-                `<li>Continuar con las actividades actuales</li>
-                 <li>Realizar evaluaciones periódicas para monitorear el progreso</li>` :
-                videoScore >= 75 ?
-                `<li>Realizar ejercicios de atención visual diariamente</li>
-                 <li>Practicar ejercicios de seguimiento de instrucciones</li>` :
-                `<li>Consultar con un especialista para evaluar posibles dificultades de atención</li>
-                 <li>Implementar rutinas de ejercicios específicos para mejorar la concentración</li>`
-              }
-            </ul>
-            
-            <div style="margin-top: 40px;">
-              <p style="color: #666; font-size: 0.8em;">Este informe es generado automáticamente por la plataforma NeuroSpot.</p>
-              <p style="color: #666; font-size: 0.8em;">Los resultados deben ser interpretados por un profesional calificado.</p>
-            </div>
-          </div>
-        `;
-        
-        document.body.appendChild(reportContainer);
-        
-        html2canvas(reportContainer).then(canvas => {
-          document.body.removeChild(reportContainer);
-          
-          const imgData = canvas.toDataURL('image/png');
-          const pdf = new jsPDF({
-            orientation: 'portrait',
-            unit: 'mm',
-            format: 'a4'
-          });
-          
-          const imgWidth = 210; // A4 width en mm
-          const imgHeight = canvas.height * imgWidth / canvas.width;
-          
-          pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
-          pdf.save(`informe-neurospot-${new Date().toISOString().slice(0, 10)}.pdf`);
-        });
-      });
-    });
   };
 
   const finishManually = () => {
@@ -502,35 +382,46 @@ export default function VideoPage() {
 
           <CardContent className="flex-1 flex flex-col justify-between py-6">
             {step === "instructions" && (
-              <div className="space-y-6 text-center flex-1 flex flex-col justify-center">
-                <div className="bg-muted/30 p-4 rounded-lg">
+              <div className="space-y-6 w-full max-w-full">
+                {/*<h2 className="text-xl font-medium mb-3">Análisis de Emociones</h2>*/}
+                
+                <div className="bg-muted/30 p-4 rounded-lg mb-4 text-left">
                   <p className="text-sm text-muted-foreground mb-2">
                     En esta prueba analizaremos tus expresiones faciales y movimientos mientras realizas una actividad sencilla.
                   </p>
                   <p className="text-sm text-muted-foreground mb-2">
-                    Necesitamos acceso a tu cámara. Por favor, siéntate derecho frente a la cámara en un lugar bien iluminado.
+                    Puedes elegir usar tu cámara o solo tu micrófono para esta actividad.
                   </p>
+                  <p className="text-sm text-muted-foreground mb-2">
+                    <strong>Instrucciones:</strong>
+                  </p>
+                  <ol className="text-sm list-decimal pl-5 mb-2 text-left">
+                    <li className="mb-1">Cuenta en voz alta del 1 al 20</li>
+                    <li className="mb-1">Recita el abecedario completo</li>
+                    <li>Mantén la mirada hacia adelante si usas cámara</li>
+                  </ol>
                   <p className="text-sm text-muted-foreground">
-                    <strong>Nota:</strong> Si tu navegador te solicita permisos, debes hacer clic en "Permitir" para continuar con la prueba.
+                    <strong>Nota:</strong> Si tu navegador te solicita permisos, debes hacer clic en "Permitir" para continuar.
                   </p>
                 </div>
+                
                 <Button 
                   className="w-full h-14 text-white font-medium bg-[#3876F4] hover:bg-[#3876F4]/90"
                   onClick={startRecording}
                 >
-                  <Camera className="mr-2 h-5 w-5" /> Permitir acceso y comenzar grabación
+                  <Camera className="mr-2 h-5 w-5" /> Comenzar actividad
                 </Button>
                 
-                <div className="pt-2">
+                <div className="pt-2 w-full text-center">
                   <p className="text-xs text-muted-foreground mb-2">
-                    ¿Problemas con la cámara? Puedes continuar sin ella:
+                    ¿Problemas con los permisos? Puedes continuar en modo manual:
                   </p>
                   <Button 
                     variant="outline" 
                     className="w-full"
                     onClick={fallbackRecording}
                   >
-                    Continuar sin cámara
+                    Continuar sin cámara ni micrófono
                   </Button>
                 </div>
               </div>
@@ -538,18 +429,21 @@ export default function VideoPage() {
 
             {step === "recording" && (
               <div className="flex-1 flex flex-col space-y-4">
+                {/* Instrucciones movidas fuera del marco de la cámara */}
                 <div className="bg-muted/30 p-4 rounded-lg mb-2">
-                  <p className="text-sm text-muted-foreground">
-                    Mientras te grabamos, por favor cuenta del 1 al 20 en voz alta, luego repite el abecedario. 
-                    Mantente mirando a la cámara lo mejor posible.
-                  </p>
+                  <p className="text-sm font-medium mb-1">Instrucciones:</p>
+                  <ol className="text-sm text-left list-decimal pl-5">
+                    <li className="mb-1">Cuenta en voz alta del 1 al 20</li>
+                    <li className="mb-1">Recita el abecedario completo</li>
+                    <li>Mantén la mirada hacia adelante</li>
+                  </ol>
                 </div>
                 
                 <div className="relative bg-black rounded-lg overflow-hidden flex-1 flex items-center justify-center">
                   {cameraPermission === false ? (
                     <div className="text-center p-4 text-white">
                       <Video className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                      <p>{cameraError || "No se pudo acceder a la cámara. Comprueba los permisos e inténtalo de nuevo."}</p>
+                      <p>{cameraError || "No se pudo acceder a la cámara o micrófono. Comprueba los permisos e inténtalo de nuevo."}</p>
                       <div className="flex flex-col gap-2 mt-4">
                         <Button 
                           variant="outline" 
@@ -563,7 +457,7 @@ export default function VideoPage() {
                           className="bg-transparent text-white border-white hover:bg-white/10"
                           onClick={fallbackRecording}
                         >
-                          Continuar sin cámara
+                          Continuar en modo manual
                         </Button>
                       </div>
                     </div>
@@ -571,19 +465,20 @@ export default function VideoPage() {
                     <>
                       {!manualMode && (
                         <>
-                          {/* Video oculto que sirve como fuente */}
+                          {/* Video en vivo (ahora visible) */}
                           <video 
                             ref={videoRef} 
-                            className="hidden" 
+                            className="absolute inset-0 w-full h-full object-cover"
                             playsInline 
                             muted
                             autoPlay
                           />
                           
-                          {/* Canvas visible que muestra el video (método principal) */}
+                          {/* Canvas visible solo si hay problemas con el video directo */}
                           <canvas 
                             ref={canvasRef}
                             className="absolute inset-0 w-full h-full object-cover"
+                            style={{ display: 'none' }}
                           />
                           
                           {/* Imagen de respaldo que muestra fotogramas (método alternativo) */}
@@ -594,9 +489,9 @@ export default function VideoPage() {
                               className="absolute inset-0 w-full h-full object-cover"
                               style={{ display: 'none' }}
                               onLoad={(e) => {
-                                const canvas = canvasRef.current;
-                                // Si el canvas está vacío, mostrar la imagen
-                                if (canvas && canvas.width === 0) {
+                                const video = videoRef.current;
+                                // Si el video está vacío, mostrar la imagen
+                                if (video && video.readyState < 2) {
                                   e.currentTarget.style.display = 'block';
                                 }
                               }}
@@ -607,57 +502,58 @@ export default function VideoPage() {
                       
                       {/* Indicador de grabación */}
                       <div className="absolute top-0 left-0 right-0 p-2 bg-black/50 text-white text-xs text-center">
-                        Cámara activa - grabando tu actividad
+                        {manualMode ? "Audio activo" : "Cámara activa"} - grabando tu actividad
                       </div>
                       <div className="absolute bottom-4 right-4 bg-red-500 p-2 rounded-full animate-pulse">
                         <div className="w-3 h-3 rounded-full bg-white"></div>
                       </div>
                       
-                      {/* Mensaje si la cámara no se ve */}
-                      <div className="absolute inset-0 flex items-center justify-center bg-black/50 pointer-events-none opacity-90 z-10">
-                        <div className="text-center p-6 bg-black/80 rounded-lg text-white max-w-md">
-                          <h3 className="font-medium mb-3 text-lg">Realizando la prueba</h3>
-                          <p className="mb-3 text-sm">
-                            {manualMode 
-                              ? "Estás realizando la prueba en modo manual (sin cámara)." 
-                              : "Es posible que no veas tu cámara, pero la grabación continúa normalmente."}
-                          </p>
-                          <div className="text-left mb-4 bg-blue-900/50 p-3 rounded-md">
-                            <p className="mb-2 font-medium text-sm">Recuerda que debes:</p>
-                            <ol className="text-sm list-decimal pl-5">
-                              <li className="mb-1">Contar en voz alta del 1 al 20</li>
-                              <li className="mb-1">Recitar el abecedario completo</li>
-                              <li>Mantener la mirada hacia adelante</li>
-                            </ol>
-                          </div>
-                          
-                          <div className="mt-5">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="bg-white text-black hover:bg-gray-200 pointer-events-auto"
-                              onClick={finishManually}
-                            >
-                              He terminado la actividad
-                            </Button>
-                            <p className="text-xs mt-2 opacity-70">
-                              * Haz clic aquí cuando hayas completado la actividad, en lugar de esperar al temporizador.
+                      {/* Solo en modo manual mostramos un mensaje en el área de la cámara */}
+                      {manualMode && (
+                        <div className="flex items-center justify-center">
+                          <div className="text-center p-6 bg-black/80 rounded-lg text-white max-w-md">
+                            <h3 className="font-medium mb-3 text-lg">Modo audio activo</h3>
+                            <p className="mb-3 text-sm">
+                              Estás realizando la prueba con audio solamente.
                             </p>
+                            <div className="mt-5">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="bg-white text-black hover:bg-gray-200"
+                                onClick={finishManually}
+                              >
+                                He terminado la actividad
+                              </Button>
+                            </div>
                           </div>
                         </div>
-                      </div>
+                      )}
                     </>
                   )}
                 </div>
+                
+                {/* Botón para terminar manualmente fuera del área de video */}
+                {!manualMode && (
+                  <div className="text-center mt-4">
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={finishManually}
+                    >
+                      He terminado la actividad
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
 
             {step === "analyzing" && (
               <div className="flex-1 flex flex-col justify-center items-center space-y-6">
                 <div className="text-center">
-                  <h2 className="text-xl font-medium mb-3">Analizando tu grabación</h2>
+                  <h2 className="text-xl font-medium mb-3">Analizando tu actividad</h2>
                   <p className="text-muted-foreground mb-4">
-                    Estamos procesando tu video para analizar patrones de comportamiento.
+                    Estamos procesando tu {manualMode ? "audio" : "video"} para analizar patrones de comportamiento.
                     Esto tomará solo unos segundos...
                   </p>
                   <div className="w-16 h-16 border-4 border-t-[#3876F4] border-r-transparent border-b-transparent border-l-transparent rounded-full animate-spin mx-auto"></div>
@@ -670,7 +566,7 @@ export default function VideoPage() {
                 <div className="text-center">
                   <h2 className="text-2xl font-bold mb-3">¡Evaluación completada!</h2>
                   <p className="text-muted-foreground mb-2">
-                    Hemos capturado y analizado tus expresiones faciales y patrones de movimiento.
+                    Hemos analizado tus patrones de {manualMode ? "voz" : "expresiones faciales y movimiento"}.
                   </p>
                   
                   <div className="bg-muted/30 p-4 rounded-lg my-4">
@@ -682,17 +578,9 @@ export default function VideoPage() {
                   <div className="space-y-3 mt-6">
                     <Button 
                       className="w-full h-14 text-white font-medium bg-[#3876F4] hover:bg-[#3876F4]/90"
-                      onClick={handleDownloadReport}
-                    >
-                      <Download className="mr-2 h-4 w-4" /> Descargar Informe PDF
-                    </Button>
-                    
-                    <Button 
-                      className="w-full h-14 font-medium"
-                      variant="outline"
                       onClick={completeExercise}
                     >
-                      <ArrowRight className="mr-2 h-4 w-4" /> Ver todos los resultados
+                      <ArrowRight className="mr-2 h-4 w-4" /> Ver resultados completos
                     </Button>
                   </div>
                 </div>

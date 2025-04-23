@@ -213,12 +213,12 @@ export default function ObservacionPage() {
             <Progress value={progress} className="h-2" />
           </CardHeader>
 
-          <CardContent className="flex-1 flex flex-col justify-between py-6">
+          <CardContent className="p-4 flex flex-col items-center justify-center">
             {!completed ? (
               <>
-                <div className="space-y-6">
+                <div className="space-y-6 text-center w-auto self-start">
                   {/* Contenedor de la imagen con un tamaño fijo para evitar saltos */}
-                  <div className="relative w-full h-48 md:h-56 bg-muted rounded-lg overflow-hidden">
+                  <div className="relative w-full h-44 md:h-52 bg-white rounded-lg overflow-hidden">
                     <div className="absolute inset-0 flex items-center justify-center text-muted-foreground">
                       <span>Cargando imagen...</span>
                     </div>
@@ -226,7 +226,10 @@ export default function ObservacionPage() {
                       src={questions[currentQuestionIndex].image} 
                       alt={`Imagen para observación ${currentQuestionIndex + 1}`}
                       fill
-                      style={{ objectFit: "cover" }}
+                      style={{ 
+                        objectFit: "contain", 
+                        backgroundColor: "white" 
+                      }}
                       sizes="(max-width: 768px) 100vw, 768px"
                       priority
                     />

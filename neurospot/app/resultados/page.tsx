@@ -59,6 +59,8 @@ type TestResult = {
   feedback: string;
   icon: React.ReactNode;
   colorClass: string;
+  rawScore?: number; // Opcional para compatibilidad con datos antiguos
+  maxPossibleScore?: number; // Opcional para compatibilidad con datos antiguos
 };
 
 // Función para normalizar un puntaje a escala 0-100
@@ -137,6 +139,8 @@ export default function ResultadosPage() {
   const [riskLevel, setRiskLevel] = useState<'bajo' | 'moderado' | 'alto'>('bajo')
   const [completedTests, setCompletedTests] = useState<string[]>([])
   const [testResults, setTestResults] = useState<TestResult[]>([])
+  const [filteredResults, setFilteredResults] = useState<TestResult[]>([])
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false)
   
   useEffect(() => {
     // Formatear fecha actual
@@ -227,7 +231,10 @@ export default function ResultadosPage() {
       name: "Test de Stroop",
       rawScore: 17, // Ejemplo: 17 respuestas correctas de 20
       maxPossibleScore: 20,
+      score: 85, // Calculado como (17/20)*100
+      maxScore: 100,
       description: "Evalúa la atención selectiva y el control inhibitorio.",
+      feedback: "Buena capacidad para inhibir respuestas automáticas en favor de respuestas menos automáticas.",
       icon: <Brain className="h-6 w-6" />,
       colorClass: "border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950",
     },
@@ -236,7 +243,10 @@ export default function ResultadosPage() {
       name: "Lectura en voz alta",
       rawScore: 14, // Ejemplo: 14 puntos de 20 posibles en la evaluación
       maxPossibleScore: 20,
+      score: 70, // Calculado como (14/20)*100
+      maxScore: 100,
       description: "Evalúa la fluidez lectora y comprensión.",
+      feedback: "Fluidez lectora adecuada. Buena articulación y ritmo durante la lectura.",
       icon: <BookOpen className="h-6 w-6" />,
       colorClass: "border-purple-200 bg-purple-50 dark:border-purple-800 dark:bg-purple-950",
     },
@@ -245,7 +255,10 @@ export default function ResultadosPage() {
       name: "Juego de Atención Sostenida",
       rawScore: 32, // Ejemplo: 32 aciertos de 50 posibles
       maxPossibleScore: 50,
+      score: 64, // Calculado como (32/50)*100
+      maxScore: 100,
       description: "Evalúa la capacidad de mantener la atención durante un tiempo prolongado.",
+      feedback: "Atención sostenida en el rango medio. Se observaron distracciones ocasionales.",
       icon: <Clock className="h-6 w-6" />,
       colorClass: "border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950",
     },
@@ -254,7 +267,10 @@ export default function ResultadosPage() {
       name: "Prueba de Memoria Visual",
       rawScore: 8, // Ejemplo: recordó 8 elementos de 10
       maxPossibleScore: 10,
+      score: 80, // Calculado como (8/10)*100
+      maxScore: 100,
       description: "Evalúa la memoria de trabajo visual.",
+      feedback: "Buena memoria de trabajo visual. Capacidad de recordar y manipular información visual adecuada para su edad.",
       icon: <Eye className="h-6 w-6" />,
       colorClass: "border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950",
     },
@@ -263,7 +279,10 @@ export default function ResultadosPage() {
       name: "Ejercicio de Observación",
       rawScore: 3, // Ejemplo: 3 respuestas correctas de 5 preguntas
       maxPossibleScore: 5,
+      score: 60, // Calculado como (3/5)*100
+      maxScore: 100,
       description: "Evalúa la capacidad de atención a detalles visuales.",
+      feedback: "Atención a detalles visuales moderada. Algunas dificultades con la velocidad de procesamiento visual.",
       icon: <Camera className="h-6 w-6" />,
       colorClass: "border-rose-200 bg-rose-50 dark:border-rose-800 dark:bg-rose-950",
     },
@@ -281,24 +300,28 @@ export default function ResultadosPage() {
   
   // Transformar los resultados brutos a resultados normalizados
   useEffect(() => {
-    const normalizedResults = rawTestResults
+    const normalizedResults = testResults
       .filter(test => completedTests.includes(test.id))
       .map(test => {
-        const normalizedScore = normalizeScore(test.rawScore, test.maxPossibleScore);
+        // Si el resultado ya tiene score, lo usamos directamente
+        if (test.score && !test.rawScore) {
+          return test;
+        }
+        
+        // De lo contrario, calculamos el score basado en rawScore y maxPossibleScore
+        const normalizedScore = test.rawScore && test.maxPossibleScore ? 
+          normalizeScore(test.rawScore, test.maxPossibleScore) : 75; // Valor por defecto
+        
         return {
-          id: test.id,
-          name: test.name,
+          ...test,
           score: normalizedScore,
           maxScore: 100, // Siempre 100 ahora
-          description: test.description,
-          feedback: generateFeedback(test.id, normalizedScore),
-          icon: test.icon,
-          colorClass: test.colorClass
+          feedback: test.feedback || generateFeedback(test.id, normalizedScore)
         };
       });
     
     setFilteredResults(normalizedResults);
-  }, [completedTests]);
+  }, [completedTests, testResults]);
   
   // Calcular puntuación total y nivel de riesgo
   useEffect(() => {
@@ -425,9 +448,6 @@ export default function ResultadosPage() {
             unit: 'mm',
             format: 'a4'
           });
-          
-          const imgWidth = 210; // A4 width en mm
-          const imgHeight = canvas.height * imgWidth / canvas.width;
           
           // Definimos constantes de la página
           const pageWidth = 210;  // Ancho A4 en mm
