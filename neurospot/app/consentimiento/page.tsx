@@ -27,10 +27,10 @@ export default function ConsentimientoPage() {
   }
 
   return (
-    <main className="min-h-screen flex flex-col">
+    <main className="min-h-screen flex flex-col overflow-x-hidden">
       <Header showBackButton />
 
-      <div className="flex-1 container max-w-full mx-auto px-4 py-8 flex flex-col justify-center">
+      <div className="flex-1 w-full px-4 py-8 flex flex-col justify-center">
         <div className="w-full max-w-4xl mx-auto p-4 mb-6 bg-yellow-50 border border-yellow-200 rounded-lg shadow-sm dark:bg-yellow-900/20 dark:border-yellow-800">
           <h3 className="text-lg font-semibold text-yellow-800 dark:text-yellow-300 mb-2">¿Cómo funciona?</h3>
           <p className="text-sm text-yellow-700 dark:text-yellow-400">
@@ -39,7 +39,7 @@ export default function ConsentimientoPage() {
           </p>
         </div>
         
-        <Card className="border-none shadow-lg w-full max-w-md mx-auto">
+        <Card className="border-none shadow-lg w-full max-w-4xl mx-auto">
           <CardHeader>
             <CardTitle className="text-xl md:text-2xl">Consentimiento Legal</CardTitle>
           </CardHeader>
@@ -58,13 +58,12 @@ export default function ConsentimientoPage() {
                   La información será tratada con confidencialidad según la normativa vigente de protección de datos.
                 </p>
 
-                <div className="flex items-start space-x-3 pt-4">
+                <div className="flex items-center space-x-3 pt-4">
                   <Checkbox
                     id="terms"
                     checked={accepted}
                     onCheckedChange={(checked) => setAccepted(checked as boolean)}
                     aria-required="true"
-                    className="mt-1"
                   />
                   <label
                     htmlFor="terms"
