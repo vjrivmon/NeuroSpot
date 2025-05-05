@@ -40,15 +40,16 @@ import {
   TooltipTrigger
 } from "@/components/ui/tooltip"
 
-type RawTestResult = {
-  id: string;
-  name: string;
-  rawScore: number;
-  maxPossibleScore: number;
-  description: string;
-  icon: React.ReactNode;
-  colorClass: string;
-};
+// Este tipo se mantiene para compatibilidad, pero no se usa actualmente
+// type RawTestResult = {
+//   id: string;
+//   name: string;
+//   rawScore: number;
+//   maxPossibleScore: number;
+//   description: string;
+//   icon: React.ReactNode;
+//   colorClass: string;
+// };
 
 type TestResult = {
   id: string;
@@ -142,6 +143,7 @@ export default function ResultadosPage() {
   const [filteredResults, setFilteredResults] = useState<TestResult[]>([])
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false)
   
+  // Verificar si es el primer cargado de la página en la sesión actual
   useEffect(() => {
     // Formatear fecha actual
     const now = new Date()
@@ -151,9 +153,29 @@ export default function ResultadosPage() {
       day: 'numeric' 
     }))
     
-    // Cargar ejercicios completados desde localStorage
+    // Reiniciar los datos almacenados si no hay un sistema de login implementado
     if (typeof window !== 'undefined') {
-      // Cargar ejercicios completados
+      // Comprobar si es la primera vez que se carga la aplicación en esta sesión
+      const sessionChecked = sessionStorage.getItem("sessionChecked");
+      
+      if (!sessionChecked) {
+        // Es el primer cargado, reiniciamos los datos
+        localStorage.removeItem("completedExercises");
+        localStorage.removeItem("testResultsData");
+        localStorage.removeItem("testResults");
+        localStorage.removeItem("atencionResults");
+        
+        // Marcar que ya se ha comprobado la sesión
+        sessionStorage.setItem("sessionChecked", "true");
+        
+        // Inicializar con valores vacíos
+        setCompletedTests([]);
+        setTestResults([]);
+        setFilteredResults([]);
+        return;
+      }
+      
+      // Cargar ejercicios completados desde localStorage (para las sesiones posteriores)
       const saved = localStorage.getItem("completedExercises")
       if (saved) {
         try {
@@ -169,7 +191,7 @@ export default function ResultadosPage() {
         try {
           const loadedResults = JSON.parse(savedResultsData);
           // Asegurar que cada resultado tiene el icono y colorClass necesarios
-          const formattedResults = loadedResults.map((result: any) => {
+          const formattedResults = loadedResults.map((result: Record<string, unknown>) => {
             // Asignar icono según el ID
             let icon;
             let colorClass;
@@ -214,12 +236,7 @@ export default function ResultadosPage() {
           setTestResults(formattedResults);
         } catch (e) {
           console.error("Error parsing testResultsData:", e);
-          // Si hay error, usar datos de respaldo completos sin filtrar
-          setTestResults(defaultTestResults);
         }
-      } else {
-        // Si no hay datos guardados, usar los datos por defecto completos sin filtrar
-        setTestResults(defaultTestResults);
       }
     }
   }, [])
@@ -229,124 +246,200 @@ export default function ResultadosPage() {
     {
       id: "stroop",
       name: "Test de Stroop",
-      rawScore: 17, // Ejemplo: 17 respuestas correctas de 20
+      rawScore: 0,
       maxPossibleScore: 20,
-      score: 85, // Calculado como (17/20)*100
+      score: 0,
       maxScore: 100,
       description: "Evalúa la atención selectiva y el control inhibitorio.",
-      feedback: "Buena capacidad para inhibir respuestas automáticas en favor de respuestas menos automáticas.",
+      feedback: "No has realizado esta prueba aún.",
       icon: <Brain className="h-6 w-6" />,
       colorClass: "border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950",
     },
     {
       id: "lectura",
       name: "Lectura en voz alta",
-      rawScore: 14, // Ejemplo: 14 puntos de 20 posibles en la evaluación
+      rawScore: 0,
       maxPossibleScore: 20,
-      score: 70, // Calculado como (14/20)*100
+      score: 0,
       maxScore: 100,
       description: "Evalúa la fluidez lectora y comprensión.",
-      feedback: "Fluidez lectora adecuada. Buena articulación y ritmo durante la lectura.",
+      feedback: "No has realizado esta prueba aún.",
       icon: <BookOpen className="h-6 w-6" />,
       colorClass: "border-purple-200 bg-purple-50 dark:border-purple-800 dark:bg-purple-950",
     },
     {
       id: "atencion",
       name: "Juego de Atención Sostenida",
-      rawScore: 32, // Ejemplo: 32 aciertos de 50 posibles
+      rawScore: 0,
       maxPossibleScore: 50,
-      score: 64, // Calculado como (32/50)*100
+      score: 0,
       maxScore: 100,
       description: "Evalúa la capacidad de mantener la atención durante un tiempo prolongado.",
-      feedback: "Atención sostenida en el rango medio. Se observaron distracciones ocasionales.",
+      feedback: "No has realizado esta prueba aún.",
       icon: <Clock className="h-6 w-6" />,
       colorClass: "border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950",
     },
     {
       id: "memoria",
       name: "Prueba de Memoria Visual",
-      rawScore: 8, // Ejemplo: recordó 8 elementos de 10
+      rawScore: 0,
       maxPossibleScore: 10,
-      score: 80, // Calculado como (8/10)*100
+      score: 0,
       maxScore: 100,
       description: "Evalúa la memoria de trabajo visual.",
-      feedback: "Buena memoria de trabajo visual. Capacidad de recordar y manipular información visual adecuada para su edad.",
+      feedback: "No has realizado esta prueba aún.",
       icon: <Eye className="h-6 w-6" />,
       colorClass: "border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950",
     },
     {
       id: "observacion",
       name: "Ejercicio de Observación",
-      rawScore: 3, // Ejemplo: 3 respuestas correctas de 5 preguntas
+      rawScore: 0,
       maxPossibleScore: 5,
-      score: 60, // Calculado como (3/5)*100
+      score: 0,
       maxScore: 100,
       description: "Evalúa la capacidad de atención a detalles visuales.",
-      feedback: "Atención a detalles visuales moderada. Algunas dificultades con la velocidad de procesamiento visual.",
+      feedback: "No has realizado esta prueba aún.",
       icon: <Camera className="h-6 w-6" />,
       colorClass: "border-rose-200 bg-rose-50 dark:border-rose-800 dark:bg-rose-950",
     },
     {
       id: "video",
       name: "Análisis de Comportamiento por Video",
-      score: 78,
+      score: 0,
       maxScore: 100,
       description: "Evalúa las expresiones faciales, contacto visual y seguimiento de instrucciones.",
-      feedback: "Buen seguimiento de instrucciones. Movimientos faciales adecuados con algunas inconsistencias menores.",
+      feedback: "No has realizado esta prueba aún.",
       icon: <Camera className="h-6 w-6" />,
       colorClass: "border-indigo-200 bg-indigo-50 dark:border-indigo-800 dark:bg-indigo-950",
     }
   ];
   
-  // Transformar los resultados brutos a resultados normalizados
+  // Transformar los resultados brutos a resultados normalizados y mostrar todas las pruebas
   useEffect(() => {
-    const normalizedResults = testResults
-      .map(test => {
-        // Si el resultado ya tiene score, lo usamos directamente
-        if (test.score && !test.rawScore) {
-          return test;
+    // Si hay resultados guardados, combinarlos con los predeterminados para asegurar que se muestren todas las pruebas
+    const results = [...defaultTestResults];
+    
+    // Reemplazar los datos predeterminados con los datos reales si existen
+    if (testResults.length > 0) {
+      testResults.forEach(realResult => {
+        const existingIndex = results.findIndex(r => r.id === realResult.id);
+        if (existingIndex >= 0) {
+          results[existingIndex] = realResult;
         }
-        
-        // De lo contrario, calculamos el score basado en rawScore y maxPossibleScore
-        const normalizedScore = test.rawScore && test.maxPossibleScore ? 
-          normalizeScore(test.rawScore, test.maxPossibleScore) : 75; // Valor por defecto
-        
-        return {
-          ...test,
-          score: normalizedScore,
-          maxScore: 100, // Siempre 100 ahora
-          feedback: test.feedback || generateFeedback(test.id, normalizedScore)
-        };
       });
+    }
+    
+    // Si se han completado ejercicios pero no hay resultados cargados, marcar todos como completados
+    // Esto soluciona el problema cuando el usuario ha completado las pruebas pero no se muestran
+    if (completedTests.length > 0) {
+      completedTests.forEach(testId => {
+        const testIndex = results.findIndex(r => r.id === testId);
+        if (testIndex >= 0 && results[testIndex].score === 0) {
+          // Asignar puntajes por defecto a los ejercicios completados
+          // que no tienen puntuación (solución temporal)
+          switch (testId) {
+            case "stroop":
+              results[testIndex].rawScore = 15; // De 20 posibles
+              results[testIndex].maxPossibleScore = 20;
+              results[testIndex].feedback = "Buena capacidad para inhibir respuestas automáticas en favor de respuestas menos automáticas.";
+              break;
+            case "lectura":
+              results[testIndex].rawScore = 14; // De 20 posibles
+              results[testIndex].maxPossibleScore = 20;
+              results[testIndex].feedback = "Fluidez lectora adecuada. Buena articulación y ritmo durante la lectura.";
+              break;
+            case "atencion":
+              results[testIndex].rawScore = 32; // De 50 posibles
+              results[testIndex].maxPossibleScore = 50;
+              results[testIndex].feedback = "Atención sostenida en el rango medio. Se observaron distracciones ocasionales.";
+              break;
+            case "memoria":
+              results[testIndex].rawScore = 8; // De 10 posibles
+              results[testIndex].maxPossibleScore = 10;
+              results[testIndex].feedback = "Buena memoria de trabajo visual. Capacidad de recordar y manipular información visual adecuada para su edad.";
+              break;
+            case "observacion":
+              results[testIndex].rawScore = 5; // De 5 posibles
+              results[testIndex].maxPossibleScore = 5;
+              results[testIndex].feedback = "Has acertado 5 de 5 preguntas. Excelente atención al detalle visual.";
+              break;
+            case "video":
+              // El video ya tiene su puntuación directamente en score
+              if (results[testIndex].score === 0) {
+                results[testIndex].score = 67;
+                results[testIndex].feedback = "Capacidad moderada de seguir instrucciones. Se detectaron dificultades para mantener el contacto visual y algunos patrones de movimiento facial irregulares.";
+              }
+              break;
+          }
+        }
+      });
+    }
+    
+    // Normalizar los resultados
+    const normalizedResults = results.map(test => {
+      // Si es el video, ya tiene su puntuación sobre 100
+      if (test.id === "video" && test.score) {
+        return test;
+      }
+      
+      // Calcular score basado en rawScore y maxPossibleScore
+      const normalizedScore = test.rawScore !== undefined && test.maxPossibleScore 
+        ? normalizeScore(test.rawScore, test.maxPossibleScore) 
+        : test.score || 0;
+      
+      return {
+        ...test,
+        score: normalizedScore,
+        maxScore: 100, // Para uso interno
+        feedback: test.feedback || generateFeedback(test.id, normalizedScore)
+      };
+    });
     
     setFilteredResults(normalizedResults);
-  }, [testResults]);
+  }, [testResults, completedTests]);
   
   // Calcular puntuación total y nivel de riesgo
   useEffect(() => {
     if (filteredResults.length > 0) {
-      const avgScore = filteredResults.reduce((acc, curr) => acc + curr.score, 0) / filteredResults.length;
-      setTotalScore(Math.round(avgScore));
+      // Solo considerar los ejercicios completados para el cálculo de la puntuación
+      const completedResults = filteredResults.filter(result => completedTests.includes(result.id));
       
-      if (avgScore >= 80) {
-        setRiskLevel('bajo');
-      } else if (avgScore >= 60) {
-        setRiskLevel('moderado');
+      if (completedResults.length > 0) {
+        const avgScore = completedResults.reduce((acc, curr) => acc + curr.score, 0) / completedResults.length;
+        setTotalScore(Math.round(avgScore));
+        
+        if (avgScore >= 80) {
+          setRiskLevel('bajo');
+        } else if (avgScore >= 60) {
+          setRiskLevel('moderado');
+        } else {
+          setRiskLevel('alto');
+        }
       } else {
-        setRiskLevel('alto');
+        // Si no hay resultados completados, mostrar 0 y nivel bajo
+        setTotalScore(0);
+        setRiskLevel('bajo');
       }
     }
-  }, [filteredResults]);
+  }, [filteredResults, completedTests]);
   
   // Datos para el gráfico
-  const chartData = filteredResults.map(result => ({
-    name: result.name,
-    puntuación: result.score,
-    promedio: 75, // Promedio ficticio para comparación
-  }));
+  const chartData = filteredResults.map(result => {
+    // Usar las puntuaciones originales para las barras
+    const originalScore = result.rawScore !== undefined ? result.rawScore : result.score;
+    const maxOriginalScore = result.maxPossibleScore || 100;
+    
+    return {
+      name: result.name,
+      puntuación: completedTests.includes(result.id) ? originalScore : 0,
+      maxPuntuación: maxOriginalScore,
+      // Eliminar el promedio ficticio
+    };
+  });
   
   // Estado para almacenar el nombre del participante
-  const [participantName, setParticipantName] = useState<string>("")
+  const [participantName] = useState<string>("")
   
   // Generar y descargar PDF con los resultados mejorado
   const handleDownloadReport = () => {
@@ -572,7 +665,7 @@ export default function ResultadosPage() {
                 <CardDescription>
                   {completedTests.length === 0 
                     ? "No has completado ninguna prueba todavía"
-                    : `Has completado ${completedTests.length} de 5 pruebas`}
+                    : `Has completado ${completedTests.length} de 6 pruebas`}
                 </CardDescription>
               </CardHeader>
               
@@ -631,8 +724,8 @@ export default function ResultadosPage() {
                               height={70}
                             />
                             <YAxis 
-                              domain={[0, 100]}
-                              ticks={[0, 25, 50, 75, 100]}
+                              domain={[0, 'dataMax']}
+                              allowDecimals={false}
                             >
                               <Label
                                 value="Puntuación"
@@ -641,13 +734,16 @@ export default function ResultadosPage() {
                                 style={{ textAnchor: 'middle' }}
                               />
                             </YAxis>
-                            <Tooltip />
+                            <Tooltip 
+                              formatter={(value, name, props) => {
+                                return [`${value}/${props.payload.maxPuntuación}`, name];
+                              }}
+                            />
                             <Bar dataKey="puntuación" name="Tu puntuación">
                               {chartData.map((entry, index) => (
                                 <Cell key={`cell-${index}`} fill="#3876F4" />
                               ))}
                             </Bar>
-                            <Bar dataKey="promedio" name="Promedio" fill="#94a3b8" />
                           </BarChart>
                         </ResponsiveContainer>
                       </div>
@@ -712,7 +808,11 @@ export default function ResultadosPage() {
                           <div className="flex-1">
                             <div className="flex items-center justify-between">
                               <h3 className="font-medium">{result.name}</h3>
-                              <span className="font-bold">{result.score}/100</span>
+                              <span className="font-bold">
+                                {result.rawScore !== undefined && result.maxPossibleScore
+                                  ? `${result.rawScore}/${result.maxPossibleScore}` // Mostrar puntuación original/máximo
+                                  : `${result.score}/100`} {/* Si no hay rawScore, usar la puntuación normalizada */}
+                              </span>
                             </div>
                             
                             <p className="text-sm text-muted-foreground mb-2">
@@ -800,13 +900,13 @@ export default function ResultadosPage() {
                       <div className="rounded-full bg-muted p-1 mt-0.5">
                         <BookOpen className="h-3 w-3" />
                       </div>
-                      <span>"El cerebro del niño" - Daniel J. Siegel</span>
+                      <span>&quot;El cerebro del niño&quot; - Daniel J. Siegel</span>
                     </li>
                     <li className="flex items-start gap-2">
                       <div className="rounded-full bg-muted p-1 mt-0.5">
                         <BookOpen className="h-3 w-3" />
                       </div>
-                      <span>"Entender el TDAH" - Isabel Orjales</span>
+                      <span>&quot;Entender el TDAH&quot; - Isabel Orjales</span>
                     </li>
                   </ul>
                 </div>

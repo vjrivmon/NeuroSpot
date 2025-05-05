@@ -37,4 +37,4 @@ jobs:
       - name: Deploy to S3
         run: |
           cd neurospot
-          aws s3 sync ./out s3://tdah-frontend/ --delete
+          aws s3 sync ./out s3://tdah-frontend/ --delete --acl public-read

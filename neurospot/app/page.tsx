@@ -1,11 +1,37 @@
+"use client"
+
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import Link from "next/link"
 import { Header } from "@/components/header"
 import { ArrowRight, BarChart3 } from "lucide-react"
 import Image from "next/image"
+import { useEffect, useState } from "react"
 
 export default function Home() {
+  const [hasPreviousResults, setHasPreviousResults] = useState(false)
+
+  useEffect(() => {
+    // Verificar si hay resultados previos
+    if (typeof window !== 'undefined') {
+      const completedExercises = localStorage.getItem("completedExercises")
+      const sessionChecked = sessionStorage.getItem("sessionChecked")
+      
+      // Si hay ejercicios completados y no es la primera sesión, mostrar el botón
+      if (completedExercises) {
+        try {
+          const exercises = JSON.parse(completedExercises)
+          setHasPreviousResults(exercises.length > 0 && sessionChecked === "true")
+        } catch (e) {
+          console.error("Error parsing completedExercises:", e)
+          setHasPreviousResults(false)
+        }
+      } else {
+        setHasPreviousResults(false)
+      }
+    }
+  }, [])
+
   return (
     <main className="min-h-screen flex flex-col">
       <Header />
@@ -42,12 +68,19 @@ export default function Home() {
                   </Link>
                 </Button>
 
-                <Button variant="outline" size="lg" className="w-full" asChild>
-                  <Link href="/resultados">
+                {hasPreviousResults ? (
+                  <Button variant="outline" size="lg" className="w-full" asChild>
+                    <Link href="/resultados">
+                      <BarChart3 className="mr-1" />
+                      Ver resultados anteriores
+                    </Link>
+                  </Button>
+                ) : (
+                  <Button variant="outline" size="lg" className="w-full" disabled>
                     <BarChart3 className="mr-1" />
                     Ver resultados anteriores
-                  </Link>
-                </Button>
+                  </Button>
+                )}
               </div>
             </div>
           </CardContent>
