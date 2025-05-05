@@ -17,6 +17,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { PauseCircle, Check } from "lucide-react"
+import { useLocalAuth } from "../../providers/auth-provider"
 
 const colors = [
   { name: "Rojo", value: "#ef4444" },
@@ -94,6 +95,7 @@ export default function StroopTestPage() {
         if (!completedExercises.includes("stroop")) {
           completedExercises.push("stroop")
           localStorage.setItem("completedExercises", JSON.stringify(completedExercises))
+          console.log("Ejercicio Stroop completado y guardado en localStorage")
         }
       } catch (e) {
         console.error("Error updating completedExercises:", e)

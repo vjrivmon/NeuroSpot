@@ -1,14 +1,28 @@
 "use client"
 
-import { useAuth } from "@/hooks/use-auth"
+import { useLocalAuth } from "../providers/auth-provider"
 import { Loader2 } from "lucide-react"
+import { useRouter } from "next/navigation"
+import { useEffect, useState } from "react"
 
 export default function ExerciseLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
-  const { isLoggedIn, isLoading } = useAuth()
+  const localAuth = useLocalAuth()
+  const router = useRouter()
+  const [isLoading, setIsLoading] = useState(true)
+
+  useEffect(() => {
+    // Verificar autenticación
+    if (!localAuth.isAuthenticated) {
+      router.push("/login")
+      return
+    }
+    
+    setIsLoading(false)
+  }, [localAuth.isAuthenticated, router])
 
   if (isLoading) {
     return (

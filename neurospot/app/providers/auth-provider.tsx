@@ -37,6 +37,14 @@ const cognitoAuthConfig = {
   response_type: "code",
   scope: "phone openid email",
   loadUserInfo: true,
+  metadata: {
+    issuer: "https://cognito-idp.eu-north-1.amazonaws.com/eu-north-1_HJTGbRfBv",
+    authorization_endpoint: "https://neurospot-auth.auth.eu-north-1.amazoncognito.com/oauth2/authorize",
+    token_endpoint: "https://neurospot-auth.auth.eu-north-1.amazoncognito.com/oauth2/token",
+    userinfo_endpoint: "https://neurospot-auth.auth.eu-north-1.amazoncognito.com/oauth2/userInfo",
+    end_session_endpoint: "https://neurospot-auth.auth.eu-north-1.amazoncognito.com/logout"
+  },
+  automaticSilentRenew: true,
   onSigninCallback: () => {
     // Evitar que la URL mantenga los parámetros de autenticación
     window.history.replaceState({}, document.title, window.location.pathname);
@@ -50,6 +58,7 @@ const USE_COGNITO = true; // Cambiar a true para usar Cognito
 function CognitoIntegration({ children }: { children: ReactNode }) {
   const oidcAuth = useOidcAuth();
   const localAuth = useLocalAuth();
+  const [initialized, setInitialized] = useState(false);
   
   useEffect(() => {
     // Si Cognito ha autenticado al usuario, actualizamos el contexto local
@@ -61,18 +70,26 @@ function CognitoIntegration({ children }: { children: ReactNode }) {
       if (localAuth.email !== cognitoEmail) {
         localAuth.login(cognitoEmail);
       }
+      
+      if (!initialized) {
+        setInitialized(true);
+      }
+    } else if (oidcAuth.error) {
+      console.error("Error de autenticación con Cognito:", oidcAuth.error);
     }
-  }, [oidcAuth.isAuthenticated, oidcAuth.user, localAuth]);
+  }, [oidcAuth.isAuthenticated, oidcAuth.user, localAuth, initialized]);
   
-  // Manejar estado de carga
-  if (oidcAuth.isLoading) {
+  // Verificar si necesitamos manejar la navegación del usuario no autenticado
+  useEffect(() => {
+    if (!oidcAuth.isLoading && !oidcAuth.isAuthenticated && initialized) {
+      // Si no está autenticado y ya intentamos inicializar, considerar iniciación de sesión
+      console.log("Usuario no autenticado con Cognito, redirigiendo...");
+    }
+  }, [oidcAuth.isLoading, oidcAuth.isAuthenticated, initialized]);
+  
+  // Manejar estado de carga inicial - sólo mostrar cargando para la página principal
+  if (oidcAuth.isLoading && typeof window !== 'undefined' && window.location.pathname === '/') {
     return <div>Cargando autenticación...</div>
-  }
-  
-  // Manejar errores
-  if (oidcAuth.error) {
-    console.error("Error de autenticación con Cognito:", oidcAuth.error);
-    return <div>Error de autenticación. Por favor, inténtelo de nuevo.</div>
   }
   
   return <>{children}</>;
