@@ -36,7 +36,7 @@ export default function Home() {
 
               <div className="pt-4 space-y-4">
                 <Button size="lg" className="w-full shadow-md" asChild>
-                  <Link href="/registro">
+                  <Link href="/login">
                     Comenzar Evaluación
                     <ArrowRight className="ml-1" />
                   </Link>
