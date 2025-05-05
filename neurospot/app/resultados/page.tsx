@@ -214,12 +214,12 @@ export default function ResultadosPage() {
           setTestResults(formattedResults);
         } catch (e) {
           console.error("Error parsing testResultsData:", e);
-          // Si hay error, usar datos de respaldo
-          setTestResults(defaultTestResults.filter(test => completedTests.includes(test.id)));
+          // Si hay error, usar datos de respaldo completos sin filtrar
+          setTestResults(defaultTestResults);
         }
       } else {
-        // Si no hay datos guardados, filtrar los datos por defecto según las pruebas completadas
-        setTestResults(defaultTestResults.filter(test => completedTests.includes(test.id)));
+        // Si no hay datos guardados, usar los datos por defecto completos sin filtrar
+        setTestResults(defaultTestResults);
       }
     }
   }, [])
@@ -301,7 +301,6 @@ export default function ResultadosPage() {
   // Transformar los resultados brutos a resultados normalizados
   useEffect(() => {
     const normalizedResults = testResults
-      .filter(test => completedTests.includes(test.id))
       .map(test => {
         // Si el resultado ya tiene score, lo usamos directamente
         if (test.score && !test.rawScore) {
@@ -321,7 +320,7 @@ export default function ResultadosPage() {
       });
     
     setFilteredResults(normalizedResults);
-  }, [completedTests, testResults]);
+  }, [testResults]);
   
   // Calcular puntuación total y nivel de riesgo
   useEffect(() => {

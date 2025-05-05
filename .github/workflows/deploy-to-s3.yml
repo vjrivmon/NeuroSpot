@@ -1,0 +1,40 @@
+name: Deploy to S3
+
+on:
+  push:
+    branches:
+      - develop
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+          
+      - name: Install dependencies
+        run: |
+          cd neurospot
+          npm ci --legacy-peer-deps
+        
+      - name: Build
+        run: |
+          cd neurospot
+          npm run build --legacy-peer-deps
+        
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-north-1
+          
+      - name: Deploy to S3
+        run: |
+          cd neurospot
+          aws s3 sync ./out s3://tdah-frontend/ --delete
