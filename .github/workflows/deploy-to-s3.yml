@@ -20,12 +20,12 @@ jobs:
       - name: Install dependencies
         run: |
           cd neurospot
-          npm ci
+          npm ci --legacy-peer-deps
         
       - name: Build
         run: |
           cd neurospot
-          npm run build
+          npm run build --legacy-peer-deps
         
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
