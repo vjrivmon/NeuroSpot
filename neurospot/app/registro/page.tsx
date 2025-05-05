@@ -4,7 +4,6 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Header } from "@/components/header"
@@ -22,6 +21,7 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import * as z from "zod"
 import { Info } from "lucide-react"
+import { useLocalAuth } from "../providers/auth-provider"
 
 // Esquema de validación con Zod
 const formSchema = z.object({
@@ -38,6 +38,9 @@ const formSchema = z.object({
   nombreTutor: z.string().min(2, {
     message: "El nombre debe tener al menos 2 caracteres."
   }),
+  email: z.string().email({
+    message: "Introduce un correo electrónico válido."
+  }),
   dniTutor: z.string().regex(/^[0-9]{8}[A-Za-z]$/, {
     message: "Introduce un DNI válido (8 números y 1 letra)."
   }),
@@ -52,6 +55,7 @@ export default function RegistroPage() {
   const router = useRouter()
   const [cursos, setCursos] = useState<string[]>([])
   const [formIsValid, setFormIsValid] = useState(false)
+  const localAuth = useLocalAuth()
   
   // Inicializar formulario con React Hook Form
   const form = useForm<FormValues>({
@@ -62,6 +66,7 @@ export default function RegistroPage() {
       curso: "",
       apoyoClase: false,
       nombreTutor: "",
+      email: "",
       dniTutor: "",
       password: ""
     },
@@ -88,18 +93,23 @@ export default function RegistroPage() {
   
   // Verificar validez del formulario cuando cambien los valores
   useEffect(() => {
-    const subscription = form.watch((value, { name, type }) => {
+    const subscription = form.watch(() => {
       // Verificar si todos los campos requeridos tienen valores
-      const requiredFields = ['nombreNino', 'nivelEducativo', 'curso', 'nombreTutor', 'dniTutor', 'password'];
+      const requiredFields = ['nombreNino', 'nivelEducativo', 'curso', 'nombreTutor', 'email', 'dniTutor', 'password'];
       const allFieldsHaveValues = requiredFields.every(field => {
-        const fieldValue = form.getValues(field as any);
-        return fieldValue && fieldValue.length > 0;
+        const fieldValue = form.getValues(field as keyof FormValues);
+        // Verificar si el valor existe y es un string con longitud mayor que 0
+        return typeof fieldValue === 'string' && fieldValue.length > 0;
       });
       
       if (allFieldsHaveValues) {
         // Verificar si el DNI tiene el formato correcto
         const dniValue = form.getValues('dniTutor');
         const dniIsValid = /^[0-9]{8}[A-Za-z]$/.test(dniValue);
+        
+        // Verificar si el correo tiene formato válido
+        const emailValue = form.getValues('email');
+        const emailIsValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailValue);
         
         // Verificar si los nombres tienen al menos 2 caracteres
         const nombreNino = form.getValues('nombreNino');
@@ -110,7 +120,7 @@ export default function RegistroPage() {
         const password = form.getValues('password');
         const passwordValida = password.length >= 6;
         
-        setFormIsValid(dniIsValid && nombresValidos && passwordValida);
+        setFormIsValid(dniIsValid && emailIsValid && nombresValidos && passwordValida);
       } else {
         setFormIsValid(false);
       }
@@ -127,9 +137,8 @@ export default function RegistroPage() {
     // Guardar en localStorage para uso futuro
     localStorage.setItem("datosParticipante", JSON.stringify(data))
     
-    // Establecer el estado de inicio de sesión
-    localStorage.setItem("isLoggedIn", "true")
-    localStorage.setItem("userDNI", data.dniTutor)
+    // Establecer el estado de inicio de sesión usando la autenticación local
+    localAuth.login(data.email);
     
     // Navegar a la página de consentimiento
     router.push("/consentimiento")
@@ -269,6 +278,20 @@ export default function RegistroPage() {
                         <FormLabel>Nombre completo del tutor <span className="text-red-500">*</span></FormLabel>
                         <FormControl>
                           <Input placeholder="Nombre y apellidos" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  
+                  <FormField
+                    control={form.control}
+                    name="email"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Correo electrónico <span className="text-red-500">*</span></FormLabel>
+                        <FormControl>
+                          <Input placeholder="correo@ejemplo.com" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>

@@ -6,7 +6,9 @@
     "@fortawesome/free-solid-svg-icons": "^6.7.2",
     "@fortawesome/react-fontawesome": "^0.2.2",
     "@hookform/resolvers": "^5.0.1",
+    "oidc-client-ts": "^3.2.1",
     "react-hook-form": "^7.56.1",
+    "react-oidc-context": "^3.3.0",
     "zod": "^3.24.3"
   }
 }
