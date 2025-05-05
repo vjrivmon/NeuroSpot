@@ -1,14 +1,12 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Header } from "@/components/header"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { 
   Form, 
   FormControl, 
@@ -21,12 +19,13 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import * as z from "zod"
 import { GoogleIcon, AppleIcon, FingerprintIcon, FaceIdIcon } from "@/components/social-icons"
-import { Separator } from "@/components/ui/separator"
+import { useLocalAuth } from "../providers/auth-provider"
+import { useAuth } from "react-oidc-context"
 
 // Esquema de validación para el formulario de inicio de sesión
 const loginSchema = z.object({
-  dni: z.string().regex(/^[0-9]{8}[A-Za-z]$/, {
-    message: "Introduce un DNI válido (8 números y 1 letra)."
+  email: z.string().email({
+    message: "Introduce un correo electrónico válido."
   }),
   password: z.string().min(6, {
     message: "La contraseña debe tener al menos 6 caracteres."
@@ -38,52 +37,93 @@ type LoginValues = z.infer<typeof loginSchema>
 export default function LoginPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
+  const localAuth = useLocalAuth()
+  const cognitoAuth = useAuth() // Para cuando USE_COGNITO sea true
+  const [emailFromStorage, setEmailFromStorage] = useState("")
+  
+  // Cargar email del localStorage si existe
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const savedEmail = localStorage.getItem("userEmail") || "";
+      setEmailFromStorage(savedEmail);
+    }
+  }, []);
   
   // Inicializar formulario con React Hook Form
   const form = useForm<LoginValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      dni: "",
+      email: emailFromStorage,
       password: ""
     },
     mode: "onChange"
   })
   
+  // Actualizar valor del email cuando se carga del localStorage
+  useEffect(() => {
+    if (emailFromStorage) {
+      form.setValue("email", emailFromStorage);
+    }
+  }, [emailFromStorage, form]);
+  
+  // Redirigir si ya está autenticado
+  useEffect(() => {
+    if (localAuth.isAuthenticated) {
+      router.push("/panel");
+    }
+  }, [localAuth.isAuthenticated, router]);
+  
+  // Función para cerrar sesión
+  const handleLogout = () => {
+    localAuth.logout();
+    
+    // Si estamos usando Cognito y el usuario está autenticado con Cognito
+    if (!localAuth.isLocalAuth && cognitoAuth.isAuthenticated) {
+      cognitoAuth.removeUser();
+    }
+  };
+  
   // Función para manejar el envío del formulario
   function onSubmit(data: LoginValues) {
     setLoading(true)
     
-    // Simulamos una verificación (en un caso real, llamaríamos a una API)
+    // Usar autenticación local
     setTimeout(() => {
-      // En un caso real, aquí verificaríamos las credenciales
-      console.log("Inicio de sesión con:", data)
-      
-      // Almacenamos información de sesión
-      localStorage.setItem("isLoggedIn", "true")
-      localStorage.setItem("userDNI", data.dni)
-      
-      // Redirigir al panel
-      router.push("/panel")
-      setLoading(false)
-    }, 1500)
+      localAuth.login(data.email);
+      router.push("/panel");
+      setLoading(false);
+    }, 1000);
   }
   
   // Función para iniciar sesión con proveedores sociales
   const loginWithProvider = (provider: string) => {
     setLoading(true)
     
-    // Simulamos el proceso de autenticación social
+    // Si no usamos autenticación local, redirigir a Cognito
+    if (!localAuth.isLocalAuth) {
+      cognitoAuth.signinRedirect();
+      return;
+    }
+    
+    // Simular login con provider en modo local
     setTimeout(() => {
-      console.log(`Inicio de sesión con ${provider}`)
-      
-      // Almacenamos información de sesión
-      localStorage.setItem("isLoggedIn", "true")
-      localStorage.setItem("authProvider", provider)
-      
-      // Redirigir al panel
-      router.push("/panel")
-      setLoading(false)
-    }, 1500)
+      const email = "usuario." + provider + "@example.com";
+      localAuth.login(email);
+      router.push("/panel");
+      setLoading(false);
+    }, 1000);
+  }
+  
+  // Si está cargando la autenticación
+  if (loading) {
+    return (
+      <main className="min-h-screen flex flex-col">
+        <Header showBackButton />
+        <div className="flex-1 flex items-center justify-center">
+          <p>Cargando autenticación...</p>
+        </div>
+      </main>
+    )
   }
 
   return (
@@ -97,6 +137,19 @@ export default function LoginPage() {
             <CardDescription className="text-center mb-4">
               Ingresa tus datos para acceder a la evaluación
             </CardDescription>
+            
+            {/* Mostrar botón de cerrar sesión si el usuario está autenticado */}
+            {localAuth.isAuthenticated && (
+              <div className="flex justify-center mb-4">
+                <Button 
+                  variant="destructive" 
+                  onClick={handleLogout}
+                  size="sm"
+                >
+                  Cerrar sesión actual ({localAuth.email})
+                </Button>
+              </div>
+            )}
             
             <div className="flex justify-center gap-4">
               <Button 
@@ -152,7 +205,7 @@ export default function LoginPage() {
               </div>
               <div className="relative flex justify-center text-xs uppercase">
                 <span className="bg-background px-2 text-muted-foreground">
-                  O inicia sesión con DNI
+                  O inicia sesión con correo electrónico
                 </span>
               </div>
             </div>
@@ -161,12 +214,12 @@ export default function LoginPage() {
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
                 <FormField
                   control={form.control}
-                  name="dni"
+                  name="email"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>DNI</FormLabel>
+                      <FormLabel>Correo electrónico</FormLabel>
                       <FormControl>
-                        <Input placeholder="12345678Z" {...field} />
+                        <Input placeholder="ejemplo@ejemplo.com" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
