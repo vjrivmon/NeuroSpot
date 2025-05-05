@@ -32,8 +32,10 @@ export function Header({ showBackButton = false }: HeaderProps) {
       return "/formulario";
     } else if (pathname === "/juegos") {
       return "/antes-de-empezar";
-    } else if (isInGameRoute || isInResultsRoute) {
+    } else if (isInGameRoute) {
       return "/juegos";
+    } else if (pathname === "/resultados") {
+      return "/panel";
     } else {
       // Por defecto, volver a la página principal
       return "/";
