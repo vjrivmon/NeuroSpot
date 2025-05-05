@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, ReactNode } from "react"
 import { Header } from "@/components/header"
 import { ExerciseCard } from "@/components/exercise-card"
 import { 
@@ -10,11 +10,12 @@ import {
   Clock, 
   Database, 
   Video,
-  LucideIcon
+  LucideIcon,
+  Loader2
 } from "lucide-react"
 import Link from "next/link"
 import { Progress } from "@/components/ui/progress"
-import { ReactNode } from "react"
+import { useAuth } from "@/hooks/use-auth"
 
 interface Ejercicio {
   id: string
@@ -29,12 +30,13 @@ interface Ejercicio {
 }
 
 export default function PanelPage() {
+  const { isLoggedIn, isLoading } = useAuth()
   const [completedExercises, setCompletedExercises] = useState<string[]>([])
   const [progressPercentage, setProgressPercentage] = useState(0)
 
   useEffect(() => {
     // Obtener ejercicios completados del localStorage
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && isLoggedIn) {
       try {
         const saved = localStorage.getItem("completedExercises")
         const completed = saved ? JSON.parse(saved) : []
@@ -48,7 +50,7 @@ export default function PanelPage() {
         console.error("Error reading completedExercises:", e)
       }
     }
-  }, [])
+  }, [isLoggedIn])
 
   const createIconElement = (Icon: LucideIcon): ReactNode => {
     return <Icon />
@@ -122,6 +124,15 @@ export default function PanelPage() {
       isAvailable: completedExercises.includes("observacion")
     }
   ]
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+        <p className="mt-4 text-lg text-muted-foreground">Cargando...</p>
+      </div>
+    )
+  }
 
   return (
     <main className="min-h-screen flex flex-col">

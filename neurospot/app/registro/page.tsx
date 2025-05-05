@@ -40,6 +40,9 @@ const formSchema = z.object({
   }),
   dniTutor: z.string().regex(/^[0-9]{8}[A-Za-z]$/, {
     message: "Introduce un DNI válido (8 números y 1 letra)."
+  }),
+  password: z.string().min(6, {
+    message: "La contraseña debe tener al menos 6 caracteres."
   })
 })
 
@@ -59,7 +62,8 @@ export default function RegistroPage() {
       curso: "",
       apoyoClase: false,
       nombreTutor: "",
-      dniTutor: ""
+      dniTutor: "",
+      password: ""
     },
     mode: "onChange" // Validar al cambiar los campos
   })
@@ -86,7 +90,7 @@ export default function RegistroPage() {
   useEffect(() => {
     const subscription = form.watch((value, { name, type }) => {
       // Verificar si todos los campos requeridos tienen valores
-      const requiredFields = ['nombreNino', 'nivelEducativo', 'curso', 'nombreTutor', 'dniTutor'];
+      const requiredFields = ['nombreNino', 'nivelEducativo', 'curso', 'nombreTutor', 'dniTutor', 'password'];
       const allFieldsHaveValues = requiredFields.every(field => {
         const fieldValue = form.getValues(field as any);
         return fieldValue && fieldValue.length > 0;
@@ -102,7 +106,11 @@ export default function RegistroPage() {
         const nombreTutor = form.getValues('nombreTutor');
         const nombresValidos = nombreNino.length >= 2 && nombreTutor.length >= 2;
         
-        setFormIsValid(dniIsValid && nombresValidos);
+        // Verificar si la contraseña tiene al menos 6 caracteres
+        const password = form.getValues('password');
+        const passwordValida = password.length >= 6;
+        
+        setFormIsValid(dniIsValid && nombresValidos && passwordValida);
       } else {
         setFormIsValid(false);
       }
@@ -118,6 +126,10 @@ export default function RegistroPage() {
     
     // Guardar en localStorage para uso futuro
     localStorage.setItem("datosParticipante", JSON.stringify(data))
+    
+    // Establecer el estado de inicio de sesión
+    localStorage.setItem("isLoggedIn", "true")
+    localStorage.setItem("userDNI", data.dniTutor)
     
     // Navegar a la página de consentimiento
     router.push("/consentimiento")
@@ -263,19 +275,39 @@ export default function RegistroPage() {
                     )}
                   />
                   
-                  <FormField
-                    control={form.control}
-                    name="dniTutor"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>DNI <span className="text-red-500">*</span></FormLabel>
-                        <FormControl>
-                          <Input placeholder="12345678A" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                  <div className="grid grid-cols-4 gap-4">
+                    <FormField
+                      control={form.control}
+                      name="dniTutor"
+                      render={({ field }) => (
+                        <FormItem className="col-span-1">
+                          <FormLabel>DNI <span className="text-red-500">*</span></FormLabel>
+                          <FormControl>
+                            <Input placeholder="12345678A" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    
+                    <FormField
+                      control={form.control}
+                      name="password"
+                      render={({ field }) => (
+                        <FormItem className="col-span-3">
+                          <FormLabel>Contraseña <span className="text-red-500">*</span></FormLabel>
+                          <FormControl>
+                            <Input 
+                              type="password" 
+                              placeholder="Mínimo 6 caracteres" 
+                              {...field} 
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
                 </div>
                 
                 <div className="pt-4">
