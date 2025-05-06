@@ -2,6 +2,16 @@
 
 Esta guía proporciona instrucciones para desplegar la aplicación NeuroSpot en diferentes plataformas de hosting.
 
+## Características Principales
+
+### Reconocimiento Visual con AWS Rekognition
+NeuroSpot ahora incluye capacidades de reconocimiento visual mediante AWS Rekognition, permitiendo:
+- Detección y análisis de rostros
+- Identificación de objetos y escenas
+- Reconocimiento de texto en imágenes
+
+Accede a esta funcionalidad en: `/reconocimiento-visual`
+
 ## Preparación para el Despliegue
 
 ### 1. Compilar la Aplicación
@@ -92,6 +102,14 @@ Vercel es la plataforma más fácil para desplegar aplicaciones Next.js, ya que 
 Para personalizar la configuración de despliegue, edita los archivos:
 - `.env.local` para desarrollo local
 - `.env.production` para entornos de producción
+
+### Variables para AWS Rekognition
+Para utilizar las funcionalidades de reconocimiento visual, configura las siguientes variables:
+```
+AWS_ACCESS_KEY_ID=your_access_key_here
+AWS_SECRET_ACCESS_KEY=your_secret_key_here
+AWS_REGION=us-east-1
+```
 
 ## Solución de Problemas Comunes
 
