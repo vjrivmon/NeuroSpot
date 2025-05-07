@@ -10,7 +10,7 @@ const nextConfig = {
     unoptimized: true,
   },
   // Comentamos la salida estática para permitir API Routes
-  // output: 'export',
+  output: 'export',
   env: {
     AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID,
     AWS_SECRET_ACCESS_KEY: process.env.AWS_SECRET_ACCESS_KEY,
