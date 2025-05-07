@@ -198,7 +198,7 @@ export default function VideoPage() {
   };
 
   // Calcular una puntuación de atención basada en los detalles faciales de AWS Rekognition
-  // Con criterios EXTREMADAMENTE estrictos para la dirección de la mirada
+  // Con criterios mejorados para la dirección de la mirada
   const calculateAttentionScore = (faceDetails: any): number => {
     if (!faceDetails) return 0;
     
@@ -214,10 +214,10 @@ export default function VideoPage() {
         const { Yaw, Pitch, Roll } = faceDetails.Pose;
         
         // Yaw: rotación horizontal (mirar a izquierda/derecha)
-        // ULTRA ESTRICTO: solo ±5 grados es considerado "mirando al frente"
-        if (Math.abs(Yaw) > 5) {
+        // Menos estricto: ±15 grados es considerado "mirando al frente"
+        if (Math.abs(Yaw) > 15) {
           // Penalización más severa por desviación horizontal
-          const penalty = Math.min(5, Math.abs(Yaw) / 5); // Mucho más severo
+          const penalty = Math.min(5, Math.abs(Yaw) / 10); 
           score -= penalty;
           isDistracted = true;
           distractionReasons.push(`Mirando a ${Yaw > 0 ? 'derecha' : 'izquierda'} (${Math.abs(Yaw).toFixed(1)}°)`);
@@ -225,14 +225,14 @@ export default function VideoPage() {
         } else {
           // Bonificación por mirar directamente al frente
           score += 1.5;
-          console.log(`[Attention] Cabeza perfectamente centrada horizontalmente (+1.5): ${score}`);
+          console.log(`[Attention] ✅ Cabeza bien centrada horizontalmente (+1.5): ${score}`);
         }
         
         // Pitch: rotación vertical (mirar arriba/abajo)
-        // ULTRA ESTRICTO: solo ±7 grados es considerado "mirando al frente"
-        if (Math.abs(Pitch) > 7) {
-          // Penalización más severa por desviación vertical
-          const penalty = Math.min(4, Math.abs(Pitch) / 7); // Mucho más severo
+        // Mucho menos estricto: ±25 grados es considerado "mirando al frente"
+        // Muchas cámaras web están en posición que fuerza un poco de inclinación
+        if (Math.abs(Pitch) > 25) {
+          const penalty = Math.min(3, Math.abs(Pitch) / 15);
           score -= penalty;
           isDistracted = true;
           distractionReasons.push(`Mirando ${Pitch > 0 ? 'abajo' : 'arriba'} (${Math.abs(Pitch).toFixed(1)}°)`);
@@ -240,38 +240,36 @@ export default function VideoPage() {
         } else {
           // Pequeña bonificación por mantener la cabeza en nivel correcto
           score += 1;
-          console.log(`[Attention] Cabeza perfectamente centrada verticalmente (+1): ${score}`);
+          console.log(`[Attention] ✅ Cabeza bien centrada verticalmente (+1): ${score}`);
         }
         
         // Roll: inclinación de la cabeza
-        // Más estricto para la inclinación
-        if (Math.abs(Roll) > 10) {
-          const penalty = Math.min(2, Math.abs(Roll) / 15);
+        // Más permisivo con la inclinación
+        if (Math.abs(Roll) > 20) {
+          const penalty = Math.min(2, Math.abs(Roll) / 20);
           score -= penalty;
-          if (Math.abs(Roll) > 15) {
+          if (Math.abs(Roll) > 30) {
             isDistracted = true;
-            distractionReasons.push(`Cabeza inclinada (${Math.abs(Roll).toFixed(1)}°)`);
+            distractionReasons.push(`Cabeza muy inclinada (${Math.abs(Roll).toFixed(1)}°)`);
           }
-          console.log(`[Attention] ${Math.abs(Roll) > 15 ? '⚠️ ' : ''}Cabeza inclinada ${Roll.toFixed(1)}° (-${penalty.toFixed(1)}): ${score}`);
+          console.log(`[Attention] ${Math.abs(Roll) > 30 ? '⚠️ ' : ''}Cabeza inclinada ${Roll.toFixed(1)}° (-${penalty.toFixed(1)}): ${score}`);
         }
       }
       
       // ---- VERIFICACIÓN DE OJOS ----
-      // Si los ojos están cerrados, siempre consideramos distracción
-      if (faceDetails.EyesOpen?.Value === false) {
-        score -= 4; // Penalización más severa
+      // Si los ojos están cerrados, consideramos distracción
+      if (faceDetails.EyesOpen?.Value === false && faceDetails.EyesOpen?.Confidence > 70) {
+        score -= 4; // Penalización severa
         isDistracted = true;
         distractionReasons.push("Ojos cerrados");
         console.log(`[Attention] ⚠️ Ojos cerrados (-4): ${score}`);
-      } else if (faceDetails.EyesOpen?.Value === true && faceDetails.EyesOpen?.Confidence > 90) {
-        score += 1;
-        console.log(`[Attention] Ojos claramente abiertos (+1): ${score}`);
-      } else if (faceDetails.EyesOpen?.Confidence < 70) {
-        // Si hay baja confianza en el estado de los ojos, también penalizamos
-        score -= 1.5;
-        isDistracted = true;
-        distractionReasons.push("Estado de ojos incierto");
-        console.log(`[Attention] ⚠️ Baja confianza en estado de ojos (-1.5): ${score}`);
+      } else if (faceDetails.EyesOpen?.Value === true && faceDetails.EyesOpen?.Confidence > 80) {
+        score += 1.5;
+        console.log(`[Attention] ✅ Ojos claramente abiertos (+1.5): ${score}`);
+      } else if (faceDetails.EyesOpen?.Confidence < 60) {
+        // Si hay baja confianza en el estado de los ojos, también penalizamos pero menos
+        score -= 1;
+        console.log(`[Attention] ℹ️ Baja confianza en estado de ojos (-1): ${score}`);
       }
       
       // ---- VERIFICACIÓN DE EMOCIONES ----
@@ -284,29 +282,21 @@ export default function VideoPage() {
           }
         }
         
-        // Emociones ideales: SOLO neutralidad y calma con alta confianza
+        // Emociones ideales: Neutralidad y calma con alta confianza
         if ((dominantEmotion.Type === 'CALM' || dominantEmotion.Type === 'NEUTRAL') && 
             dominantEmotion.Confidence > 70) {
           score += 1;
-          console.log(`[Attention] Emoción ideal (${dominantEmotion.Type}) (+1): ${score}`);
+          console.log(`[Attention] ✅ Emoción ideal (${dominantEmotion.Type}) (+1): ${score}`);
         } 
-        // Emociones de distracción: confusión, sorpresa, disgusto, miedo, tristeza
-        else if (['CONFUSED', 'SURPRISED', 'DISGUSTED', 'FEAR', 'SAD'].includes(dominantEmotion.Type) && 
-                dominantEmotion.Confidence > 30) { // Umbral más bajo
-          score -= 2; // Penalización más alta
-          isDistracted = true;
-          distractionReasons.push(`Expresión de ${dominantEmotion.Type.toLowerCase()}`);
-          console.log(`[Attention] ⚠️ Emoción distractora (${dominantEmotion.Type}) (-2): ${score}`);
-        }
-        // Cualquier otra emoción que no sea neutral/calma
-        else if (dominantEmotion.Type !== 'CALM' && dominantEmotion.Type !== 'NEUTRAL' && 
+        // Emociones de distracción más específicas
+        else if (['CONFUSED', 'DISGUSTED', 'FEAR'].includes(dominantEmotion.Type) && 
                 dominantEmotion.Confidence > 50) {
-          score -= 0.5;
-          console.log(`[Attention] Emoción no ideal (${dominantEmotion.Type}) (-0.5): ${score}`);
+          score -= 1.5;
+          console.log(`[Attention] ⚠️ Emoción distractora (${dominantEmotion.Type}) (-1.5): ${score}`);
         }
       }
       
-      // Si hay cualquier factor de distracción, garantizar que la puntuación esté por debajo de 5
+      // Si hay factores severos de distracción, garantizar que la puntuación esté por debajo de 5
       if (isDistracted && score > 5) {
         score = Math.min(score, 4.9);
         console.log(`[Attention] Ajustando puntuación a ${score} por detección de distracción`);
@@ -759,8 +749,8 @@ export default function VideoPage() {
         return {
           frameId: frame.id,
           score: score,
-          // Clasificar el nivel de atención basado en la puntuación CON UMBRAL MÁS ESTRICTO
-          level: score >= 8 ? 'high' : (score >= 5 ? 'medium' : 'low')
+          // Clasificar el nivel de atención con umbrales más realistas
+          level: score >= 7 ? 'high' : (score >= 4 ? 'medium' : 'low')
         };
       });
     
@@ -769,7 +759,7 @@ export default function VideoPage() {
       ? attentionScores.reduce((sum, item) => sum + item.score, 0) / attentionScores.length
       : 0;
     
-    // Calcular porcentaje de frames con alta atención (puntuación >= 7)
+    // Calcular porcentaje de frames con alta atención
     const highAttentionFrames = attentionScores.filter(frame => frame.level === 'high');
     const highAttentionPercentage = attentionScores.length > 0
       ? Math.round((highAttentionFrames.length / attentionScores.length) * 100)
@@ -778,11 +768,11 @@ export default function VideoPage() {
     return (
       <div className="text-sm">
         <div className="space-y-2">
-          {/* Estadísticas de atención - versión mejorada */}
+          {/* Estadísticas de atención - versión más clara */}
           {attentionFrames.length > 0 && (
             <div className="p-2 bg-blue-50 rounded-md border border-blue-100">
-              <div className="font-medium text-blue-800 text-center">
-                {attentionPercentage}% de presencia facial
+              <div className="font-medium text-blue-800">
+                {attentionPercentage}% de frames con rostro detectado
               </div>
               
               {/* Detalles de presencia */}
@@ -795,16 +785,16 @@ export default function VideoPage() {
                 </span>
               </div>
               
-              {/* Medidor visual de atención */}
+              {/* Medidor visual de atención - Mejorado */}
               {attentionScores.length > 0 && (
                 <div className="mt-2">
                   <div className="flex justify-between items-center text-xs mb-1">
                     <span className="font-medium text-blue-700">
-                      Calidad de atención: {averageAttention.toFixed(1)}/10
+                      Puntuación: {averageAttention.toFixed(1)}/10
                     </span>
                     <span className={`px-1.5 py-0.5 rounded font-semibold ${
-                      highAttentionPercentage >= 70 ? "bg-green-100 text-green-800" : 
-                      highAttentionPercentage >= 40 ? "bg-yellow-100 text-yellow-800" : 
+                      highAttentionPercentage >= 60 ? "bg-green-100 text-green-800" : 
+                      highAttentionPercentage >= 30 ? "bg-amber-100 text-amber-800" : 
                       "bg-red-100 text-red-800"
                     }`}>
                       {highAttentionPercentage}% óptima
@@ -814,7 +804,7 @@ export default function VideoPage() {
                   {/* Barra de puntuaciones */}
                   <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
                     <div 
-                      className="h-full bg-gradient-to-r from-red-500 via-yellow-500 to-green-500"
+                      className="h-full bg-gradient-to-r from-red-500 via-amber-500 to-green-500"
                       style={{ 
                         width: `${Math.min(100, Math.max(0, averageAttention * 10))}%`,
                         transition: 'width 0.5s ease'
@@ -826,7 +816,7 @@ export default function VideoPage() {
             </div>
           )}
           
-          {/* Lista de frames con indicadores mejorados */}
+          {/* Lista de frames con indicadores más claros */}
           <div className="max-h-40 overflow-y-auto border rounded-md">
             {uploadedFrames.map((frame, index) => {
               // Calcular la puntuación para este frame si tiene datos faciales
@@ -836,22 +826,25 @@ export default function VideoPage() {
               let attentionLevel = "";
               let bgColor = "";
               let textColor = "";
+              let icon = null;
               
               if (frame.hasFace === true) {
                 if (frameScore !== null) {
-                  // UMBRALES MÁS ESTRICTOS: >=8 atento, >=5 parcial, <5 distraído
-                  if (frameScore >= 8) {
+                  // Umbrales más realistas: >=7 atento, >=4 parcial, <4 distraído
+                  if (frameScore >= 7) {
                     attentionLevel = "Atento";
                     bgColor = "bg-green-100";
                     textColor = "text-green-800";
-                  } else if (frameScore >= 5) {
+                    icon = <Check size={12} className="mr-1" />;
+                  } else if (frameScore >= 4) {
                     attentionLevel = "Parcial";
-                    bgColor = "bg-yellow-100";
-                    textColor = "text-yellow-800";
+                    bgColor = "bg-amber-100";
+                    textColor = "text-amber-800";
                   } else {
                     attentionLevel = "Distraído";
-                    bgColor = "bg-orange-100";
-                    textColor = "text-orange-800";
+                    bgColor = "bg-red-100";
+                    textColor = "text-red-800";
+                    icon = <AlertCircle size={12} className="mr-1" />;
                   }
                 } else {
                   attentionLevel = "Rostro";
@@ -862,6 +855,7 @@ export default function VideoPage() {
                 attentionLevel = "Sin rostro";
                 bgColor = "bg-red-100";
                 textColor = "text-red-800";
+                icon = <AlertCircle size={12} className="mr-1" />;
               }
               
               return (
@@ -872,7 +866,8 @@ export default function VideoPage() {
                   <div className="flex-1">
                     Frame-{frame.id}.jpg
                   </div>
-                  <div className={`text-xs px-1.5 py-0.5 rounded ${bgColor} ${textColor}`}>
+                  <div className={`text-xs px-1.5 py-0.5 rounded flex items-center ${bgColor} ${textColor}`}>
+                    {icon}
                     {frameScore !== null ? `${attentionLevel} (${frameScore.toFixed(1)})` : attentionLevel}
                   </div>
                 </div>
@@ -1597,13 +1592,37 @@ export default function VideoPage() {
                           {checkUploadStatus().success} subidos
                         </span>
                         {checkUploadStatus().withFace > 0 && (
-                          <span className="text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
-                            {checkUploadStatus().withFace} atento
+                          <span 
+                            className={`${
+                              // Obtener los últimos 3 frames con rostro
+                              uploadedFrames.filter(f => f.hasFace === true).slice(-3).some(frame => 
+                                frame.faceDetails && calculateAttentionScore(frame.faceDetails) < 5
+                              )
+                              ? "text-red-600 bg-red-50 animate-pulse" 
+                              : "text-green-600 bg-green-50"
+                            } px-2 py-0.5 rounded-full flex items-center`}
+                          >
+                            {
+                              // Verificar si hay distracción en los últimos frames
+                              uploadedFrames.filter(f => f.hasFace === true).slice(-3).some(frame => 
+                                frame.faceDetails && calculateAttentionScore(frame.faceDetails) < 5
+                              ) ? (
+                                <>
+                                  <AlertCircle size={12} className="mr-1" />
+                                  No mirando
+                                </>
+                              ) : (
+                                <>
+                                  <Check size={12} className="mr-1" />
+                                  Atento
+                                </>
+                              )
+                            }
                           </span>
                         )}
                         {checkUploadStatus().withoutFace > 0 && (
                           <span className="text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full">
-                            {checkUploadStatus().withoutFace} distraído
+                            {checkUploadStatus().withoutFace} sin rostro
                           </span>
                         )}
                       </div>
@@ -1614,6 +1633,35 @@ export default function VideoPage() {
                       <div>ID Sesión: <span className="font-mono">{sessionId}</span></div>
                       <div>Bucket: neurospot-data/videos/{sessionId}/</div>
                     </div>
+                    
+                    {/* Alertas de atención y mensajes de ánimo */}
+                    {uploadedFrames.filter(f => f.hasFace === true).length > 0 && (
+                      <div className={`text-sm p-2 rounded-md mt-1 ${
+                        // Verificar si hay distracción en los últimos frames
+                        uploadedFrames.filter(f => f.hasFace === true).slice(-3).some(frame => 
+                          frame.faceDetails && calculateAttentionScore(frame.faceDetails) < 5
+                        ) 
+                        ? "bg-amber-50 text-amber-700 border border-amber-200" 
+                        : "bg-green-50 text-green-700 border border-green-200"
+                      }`}>
+                        {
+                          // Mensajes positivos y claros basados en la atención
+                          uploadedFrames.filter(f => f.hasFace === true).slice(-3).some(frame => 
+                            frame.faceDetails && calculateAttentionScore(frame.faceDetails) < 5
+                          ) ? (
+                            <>
+                              <AlertCircle size={14} className="inline mr-1" />
+                              <strong>¡Recuerda!</strong> Intenta mantener la mirada hacia la cámara durante el ejercicio.
+                            </>
+                          ) : (
+                            <>
+                              <Check size={14} className="inline mr-1" />
+                              <strong>¡Perfecto!</strong> Estás manteniendo muy buena atención visual. ¡Sigue así!
+                            </>
+                          )
+                        }
+                      </div>
+                    )}
                     
                     {/* Mostrar lista de frames si está expandido */}
                     {showFramesList && (
