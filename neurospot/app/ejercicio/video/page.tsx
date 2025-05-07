@@ -9,12 +9,13 @@ declare global {
   }
 }
 
-import { useState, useEffect, useRef, useCallback, useMemo, useLayoutEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Header } from "@/components/header"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { useRouter } from "next/navigation"
+import { v4 as uuidv4 } from "uuid"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -25,7 +26,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { PauseCircle, Video, Camera, ArrowRight, Download } from "lucide-react"
+import { PauseCircle, Video, Camera, ArrowRight, Download, Check, AlertCircle } from "lucide-react"
 
 export default function VideoPage() {
   const [step, setStep] = useState<"instructions" | "recording" | "analyzing" | "completed">("instructions")
@@ -39,6 +40,9 @@ export default function VideoPage() {
   const [analysisResult, setAnalysisResult] = useState<string>("")
   const [videoFrameSrc, setVideoFrameSrc] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [sessionId, setSessionId] = useState<string>("")
+  const [uploadedFrames, setUploadedFrames] = useState<{id: number, status: 'success'|'error', hasFace: boolean|null, faceDetails?: any}[]>([])
+  const [showFramesList, setShowFramesList] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
@@ -50,6 +54,280 @@ export default function VideoPage() {
   const timeTextRef = useRef<HTMLSpanElement>(null) // Referencia para actualizar el texto del tiempo directamente
   const progressBarRef = useRef<HTMLDivElement>(null) // Referencia para actualizar la barra de progreso directamente
   const router = useRouter()
+
+  // Variable para contar frames
+  const frameCountRef = useRef(0);
+
+  // Subir fotograma a S3 y analizarlo con Rekognition
+  const uploadFrameToS3 = async (dataUrl: string, frameId: number) => {
+    try {
+      // Registrar inicio del proceso con identificador claro
+      console.log(`[UPLOAD:${frameId}] Iniciando subida de frame...`);
+      
+      // Verificar que tenemos una sesión válida
+      if (!sessionId) {
+        console.error(`[UPLOAD:${frameId}] Error: No hay ID de sesión válido`);
+        return;
+      }
+      
+      // Crear un nuevo ID de frame único basado en la sesión y contador
+      const frameKey = `${sessionId}/frame_${frameId.toString().padStart(3, '0')}.jpg`;
+      
+      // Limpiar el dataURL para obtener solo los datos binarios
+      const base64Data = dataUrl.split(',')[1];
+      if (!base64Data) {
+        console.error(`[UPLOAD:${frameId}] Error: Formato de dataUrl inválido`);
+        return;
+      }
+      
+      // 1. Primero subir a S3 (Estocolmo)
+      console.log(`[UPLOAD:${frameId}] Solicitando URL firmada para ${frameKey}`);
+      const response = await fetch("/api/getSignedUrl", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          fileName: frameKey,
+          fileType: "image/jpeg",
+          bucket: "neurospot-data", // Asegurarnos de usar el bucket correcto
+          purpose: "video-frame"
+        }),
+      });
+      
+      if (!response.ok) {
+        console.error(`[UPLOAD:${frameId}] Error al obtener URL firmada:`, response.status, await response.text());
+        
+        // Agregar a la lista de frames con error
+        setUploadedFrames(prev => [...prev, {
+          id: frameId,
+          status: 'error',
+          hasFace: null
+        }]);
+        return;
+      }
+      
+      const { url, bucket, key } = await response.json();
+      console.log(`[UPLOAD:${frameId}] URL firmada obtenida para bucket ${bucket}, key ${key}`);
+      
+      // Convertir la base64 a un blob para subir
+      const binaryData = atob(base64Data);
+      const arrayBuffer = new ArrayBuffer(binaryData.length);
+      const uint8Array = new Uint8Array(arrayBuffer);
+      
+      for (let i = 0; i < binaryData.length; i++) {
+        uint8Array[i] = binaryData.charCodeAt(i);
+      }
+      
+      const blob = new Blob([uint8Array], { type: 'image/jpeg' });
+      
+      // Subir a S3 directamente usando fetch con la URL firmada
+      console.log(`[UPLOAD:${frameId}] Iniciando envío PUT a S3...`);
+      const uploadResponse = await fetch(url, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "image/jpeg",
+        },
+        body: blob,
+      });
+      
+      if (!uploadResponse.ok) {
+        console.error(`[UPLOAD:${frameId}] Error al subir imagen a S3:`, uploadResponse.status, await uploadResponse.text());
+        
+        // Agregar a la lista de frames con error
+        setUploadedFrames(prev => [...prev, {
+          id: frameId,
+          status: 'error',
+          hasFace: null
+        }]);
+        return;
+      }
+      
+      console.log(`[UPLOAD:${frameId}] Frame subido exitosamente a ${bucket}/${key}`);
+      
+      // 2. Enviar la imagen directamente para análisis (sin usar referencias a S3)
+      console.log(`[UPLOAD:${frameId}] Enviando frame para análisis facial directo...`);
+      
+      const analysisResponse = await fetch("/api/analyzeImage", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          image: dataUrl,  // Enviar la imagen directamente como base64
+          bucket, // También enviar referencias por compatibilidad
+          key
+        }),
+      });
+      
+      if (!analysisResponse.ok) {
+        console.error(`[UPLOAD:${frameId}] Error al analizar imagen:`, analysisResponse.status, await analysisResponse.text());
+        
+        // Aún así consideramos la subida exitosa
+        setUploadedFrames(prev => [...prev, {
+          id: frameId,
+          status: 'success',
+          hasFace: false,
+        }]);
+        return;
+      }
+      
+      const analysisData = await analysisResponse.json();
+      console.log(`[UPLOAD:${frameId}] Análisis completado:`, 
+        analysisData.hasFace ? "Rostro detectado" : "Sin rostro",
+        analysisData.faceDetails ? `Detalles: ${Object.keys(analysisData.faceDetails).length}` : "");
+      
+      // Actualizar la lista de frames subidos
+      setUploadedFrames(prev => [...prev, {
+        id: frameId,
+        status: 'success',
+        hasFace: analysisData.hasFace,
+        faceDetails: analysisData.faceDetails
+      }]);
+      
+    } catch (error) {
+      console.error(`[UPLOAD:${frameId}] Error general en proceso de subida:`, error);
+      
+      // Agregar a la lista con error
+      setUploadedFrames(prev => [...prev, {
+        id: frameId,
+        status: 'error',
+        hasFace: null
+      }]);
+    }
+  };
+
+  // Calcular una puntuación de atención basada en los detalles faciales de AWS Rekognition
+  // Con criterios EXTREMADAMENTE estrictos para la dirección de la mirada
+  const calculateAttentionScore = (faceDetails: any): number => {
+    if (!faceDetails) return 0;
+    
+    try {
+      // Comenzamos con una puntuación base neutral
+      let score = 5; 
+      let isDistracted = false;
+      const distractionReasons = [];
+      
+      // ---- VERIFICACIÓN DE POSE/ORIENTACIÓN (PRIORIDAD MÁXIMA) ----
+      // Esta es la parte crucial para detectar si alguien no mira a la cámara
+      if (faceDetails.Pose) {
+        const { Yaw, Pitch, Roll } = faceDetails.Pose;
+        
+        // Yaw: rotación horizontal (mirar a izquierda/derecha)
+        // ULTRA ESTRICTO: solo ±5 grados es considerado "mirando al frente"
+        if (Math.abs(Yaw) > 5) {
+          // Penalización más severa por desviación horizontal
+          const penalty = Math.min(5, Math.abs(Yaw) / 5); // Mucho más severo
+          score -= penalty;
+          isDistracted = true;
+          distractionReasons.push(`Mirando a ${Yaw > 0 ? 'derecha' : 'izquierda'} (${Math.abs(Yaw).toFixed(1)}°)`);
+          console.log(`[Attention] ⚠️ Cabeza girada horizontalmente ${Yaw.toFixed(1)}° (-${penalty.toFixed(1)}): ${score}`);
+        } else {
+          // Bonificación por mirar directamente al frente
+          score += 1.5;
+          console.log(`[Attention] Cabeza perfectamente centrada horizontalmente (+1.5): ${score}`);
+        }
+        
+        // Pitch: rotación vertical (mirar arriba/abajo)
+        // ULTRA ESTRICTO: solo ±7 grados es considerado "mirando al frente"
+        if (Math.abs(Pitch) > 7) {
+          // Penalización más severa por desviación vertical
+          const penalty = Math.min(4, Math.abs(Pitch) / 7); // Mucho más severo
+          score -= penalty;
+          isDistracted = true;
+          distractionReasons.push(`Mirando ${Pitch > 0 ? 'abajo' : 'arriba'} (${Math.abs(Pitch).toFixed(1)}°)`);
+          console.log(`[Attention] ⚠️ Cabeza girada verticalmente ${Pitch.toFixed(1)}° (-${penalty.toFixed(1)}): ${score}`);
+        } else {
+          // Pequeña bonificación por mantener la cabeza en nivel correcto
+          score += 1;
+          console.log(`[Attention] Cabeza perfectamente centrada verticalmente (+1): ${score}`);
+        }
+        
+        // Roll: inclinación de la cabeza
+        // Más estricto para la inclinación
+        if (Math.abs(Roll) > 10) {
+          const penalty = Math.min(2, Math.abs(Roll) / 15);
+          score -= penalty;
+          if (Math.abs(Roll) > 15) {
+            isDistracted = true;
+            distractionReasons.push(`Cabeza inclinada (${Math.abs(Roll).toFixed(1)}°)`);
+          }
+          console.log(`[Attention] ${Math.abs(Roll) > 15 ? '⚠️ ' : ''}Cabeza inclinada ${Roll.toFixed(1)}° (-${penalty.toFixed(1)}): ${score}`);
+        }
+      }
+      
+      // ---- VERIFICACIÓN DE OJOS ----
+      // Si los ojos están cerrados, siempre consideramos distracción
+      if (faceDetails.EyesOpen?.Value === false) {
+        score -= 4; // Penalización más severa
+        isDistracted = true;
+        distractionReasons.push("Ojos cerrados");
+        console.log(`[Attention] ⚠️ Ojos cerrados (-4): ${score}`);
+      } else if (faceDetails.EyesOpen?.Value === true && faceDetails.EyesOpen?.Confidence > 90) {
+        score += 1;
+        console.log(`[Attention] Ojos claramente abiertos (+1): ${score}`);
+      } else if (faceDetails.EyesOpen?.Confidence < 70) {
+        // Si hay baja confianza en el estado de los ojos, también penalizamos
+        score -= 1.5;
+        isDistracted = true;
+        distractionReasons.push("Estado de ojos incierto");
+        console.log(`[Attention] ⚠️ Baja confianza en estado de ojos (-1.5): ${score}`);
+      }
+      
+      // ---- VERIFICACIÓN DE EMOCIONES ----
+      if (faceDetails.Emotions && Array.isArray(faceDetails.Emotions)) {
+        // Buscar emoción dominante
+        let dominantEmotion = {Type: 'UNKNOWN', Confidence: 0};
+        for (const emotion of faceDetails.Emotions) {
+          if (emotion.Confidence > dominantEmotion.Confidence) {
+            dominantEmotion = emotion;
+          }
+        }
+        
+        // Emociones ideales: SOLO neutralidad y calma con alta confianza
+        if ((dominantEmotion.Type === 'CALM' || dominantEmotion.Type === 'NEUTRAL') && 
+            dominantEmotion.Confidence > 70) {
+          score += 1;
+          console.log(`[Attention] Emoción ideal (${dominantEmotion.Type}) (+1): ${score}`);
+        } 
+        // Emociones de distracción: confusión, sorpresa, disgusto, miedo, tristeza
+        else if (['CONFUSED', 'SURPRISED', 'DISGUSTED', 'FEAR', 'SAD'].includes(dominantEmotion.Type) && 
+                dominantEmotion.Confidence > 30) { // Umbral más bajo
+          score -= 2; // Penalización más alta
+          isDistracted = true;
+          distractionReasons.push(`Expresión de ${dominantEmotion.Type.toLowerCase()}`);
+          console.log(`[Attention] ⚠️ Emoción distractora (${dominantEmotion.Type}) (-2): ${score}`);
+        }
+        // Cualquier otra emoción que no sea neutral/calma
+        else if (dominantEmotion.Type !== 'CALM' && dominantEmotion.Type !== 'NEUTRAL' && 
+                dominantEmotion.Confidence > 50) {
+          score -= 0.5;
+          console.log(`[Attention] Emoción no ideal (${dominantEmotion.Type}) (-0.5): ${score}`);
+        }
+      }
+      
+      // Si hay cualquier factor de distracción, garantizar que la puntuación esté por debajo de 5
+      if (isDistracted && score > 5) {
+        score = Math.min(score, 4.9);
+        console.log(`[Attention] Ajustando puntuación a ${score} por detección de distracción`);
+      }
+      
+      // Registrar los resultados detallados
+      if (isDistracted) {
+        console.log(`[Attention] ⚠️ DISTRACCIÓN DETECTADA: ${distractionReasons.join(', ')}`);
+      } else if (score >= 7) {
+        console.log(`[Attention] ✅ ATENCIÓN PERFECTA: Mirada directa a cámara`);
+      } else {
+        console.log(`[Attention] ℹ️ ATENCIÓN PARCIAL: ${score.toFixed(1)}/10`);
+      }
+      
+      // Limitar a rango 0-10
+      return Math.max(0, Math.min(10, score));
+    } catch (error) {
+      console.error("Error calculando puntuación de atención:", error);
+      return 5; // Valor por defecto en caso de error
+    }
+  };
 
   // Estilos globales para animaciones
   useEffect(() => {
@@ -123,35 +401,50 @@ export default function VideoPage() {
     }
   };
 
-  // Función para capturar un fotograma del video y convertirlo en una URL de datos
+  // Capturar fotograma de video y subirlo a S3 con análisis de Rekognition
   const captureVideoFrame = () => {
-    if (videoRef.current && videoRef.current.readyState >= 2) { // HAVE_CURRENT_DATA o superior
-      try {
+    console.log("Intentando capturar fotograma...");
+    
+    // Verificamos si tenemos elemento de video
+    if (!videoRef.current) {
+      console.error("Error: No hay elemento de video disponible para capturar frame");
+      return;
+    }
+    
+    // Verificamos si tiene contenido
+    if (videoRef.current.readyState < 2) {
+      console.error("Error: El video no está listo (readyState:", videoRef.current.readyState, ")");
+      return;
+    }
+
+    try {
+      console.log("Video readyState:", videoRef.current.readyState, "- dimensiones:", videoRef.current.videoWidth, "x", videoRef.current.videoHeight);
+      
         // Crear un canvas temporal para capturar el fotograma
         const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
         const videoWidth = videoRef.current.videoWidth || 640;
         const videoHeight = videoRef.current.videoHeight || 480;
         
         canvas.width = videoWidth;
         canvas.height = videoHeight;
         
-        const ctx = canvas.getContext('2d');
         if (ctx) {
           // Dibujar el fotograma actual en el canvas
           ctx.drawImage(videoRef.current, 0, 0, videoWidth, videoHeight);
           
           // Convertir el canvas a una URL de datos con mejor calidad
           const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
-          setVideoFrameSrc(dataUrl);
-          
-          // Para depuración, podríamos mostrar la imagen capturada
-          // console.log("Frame capturado:", dataUrl.substring(0, 50) + "...");
+        console.log("Frame capturado con éxito, tamaño aproximado:", Math.round(dataUrl.length/1024), "KB");
+        
+        // Subida al bucket
+        uploadFrameToS3(dataUrl, frameCountRef.current);
+        frameCountRef.current++;
+      } else {
+        console.error("No se pudo obtener el contexto 2D del canvas");
         }
       } catch (error) {
         console.error("Error al capturar fotograma:", error);
-      }
-    } else {
-      console.log("El video no está listo para capturar fotogramas");
     }
   };
 
@@ -266,28 +559,78 @@ export default function VideoPage() {
     };
   }, [step, videoRef.current]);
 
-  // Función para analizar comportamiento (simulado)
+  // Función para analizar comportamiento con datos reales
   const analyzeVideoContent = () => {
-    // En una aplicación real, esto enviaría el video a un servidor para análisis
-    // Aquí simulamos un proceso de análisis y generamos resultados
+    console.log("Analizando comportamiento con datos reales de atención");
     setStep("analyzing");
     
-    // Simular tiempo de análisis (3 segundos)
+    // Obtener estadísticas de los frames capturados
+    const stats = checkUploadStatus();
+    console.log("Estadísticas de frames:", stats);
+    
+    // Obtener las puntuaciones de atención de frames con rostros detectados
+    const attentionFrames = uploadedFrames.filter(f => f.hasFace === true && f.faceDetails);
+    
+    // Calcular puntuación de cada frame
+    const attentionScores = attentionFrames.map(frame => {
+      const score = calculateAttentionScore(frame.faceDetails);
+      return score;
+    });
+    
+    console.log("Puntuaciones de atención:", attentionScores);
+    
+    // Calcular puntuación real basada en:
+    // 1. Porcentaje de frames con rostro detectado
+    // 2. Promedio de puntuación de atención en esos frames
+    let finalScore = 0;
+    let feedback = "";
+    
+    // Simular tiempo de análisis (2 segundos)
     setTimeout(() => {
-      // Generar puntuación aleatoria entre 60 y 95
-      const score = Math.floor(Math.random() * 36) + 60;
-      setVideoScore(score);
-      
-      // Generar retroalimentación basada en la puntuación
-      let feedback;
-      if (score >= 85) {
-        feedback = "Excelente capacidad de seguir instrucciones. Movimientos faciales naturales y fluidos. Buen contacto visual.";
-      } else if (score >= 75) {
-        feedback = "Buena capacidad de seguir instrucciones. Algunos patrones de movimiento facial muestran ligeras inconsistencias.";
+      if (uploadedFrames.length === 0) {
+        // Si no hay frames, generamos una puntuación baja
+        finalScore = 60;
+        feedback = "No se pudieron capturar suficientes frames para un análisis preciso. Recomendamos repetir la prueba con mejor conectividad o cámara.";
+      } else {
+        // Calcular porcentaje de atención
+        const attentionPercentage = uploadedFrames.length > 0 
+          ? (stats.withFace / uploadedFrames.length) * 100 
+          : 0;
+          
+        // Calcular puntuación media de atención
+        const avgAttentionScore = attentionScores.length > 0 
+          ? attentionScores.reduce((sum, score) => sum + score, 0) / attentionScores.length 
+          : 5; // valor neutro por defecto
+          
+        console.log(`Porcentaje de atención: ${attentionPercentage.toFixed(1)}%, Puntuación media: ${avgAttentionScore.toFixed(1)}/10`);
+        
+        // Calcular puntuación final ponderada:
+        // - 60% basado en porcentaje de frames con rostro (presencia)
+        // - 40% basado en la calidad de atención en esos frames
+        const presenceScore = Math.min(100, attentionPercentage * 1.2); // Hasta 60 puntos por presencia
+        const qualityScore = avgAttentionScore * 4; // Hasta 40 puntos por calidad de atención
+        
+        finalScore = Math.round(
+          (presenceScore * 0.6) + (qualityScore * 0.4)
+        );
+        
+        // Limitar entre 60-95 para mantener consistencia con el diseño original
+        finalScore = Math.max(60, Math.min(95, finalScore));
+        
+        console.log(`Puntuación final calculada: ${finalScore} (Presencia: ${presenceScore.toFixed(1)}, Calidad: ${qualityScore.toFixed(1)})`);
+        
+        // Generar retroalimentación basada en la puntuación real
+        if (finalScore >= 85) {
+          feedback = "Excelente capacidad de seguir instrucciones. Mantuviste contacto visual constante y tus expresiones faciales fueron naturales y fluidas.";
+        } else if (finalScore >= 75) {
+          feedback = "Buena capacidad de seguir instrucciones. Mantuviste contacto visual la mayor parte del tiempo con algunos momentos de distracción.";
       } else {
         feedback = "Capacidad moderada de seguir instrucciones. Se detectaron dificultades para mantener el contacto visual y algunos patrones de movimiento facial irregulares.";
+        }
       }
       
+      // Establecer puntuación y feedback calculados
+      setVideoScore(finalScore);
       setAnalysisResult(feedback);
       setStep("completed");
       
@@ -296,32 +639,44 @@ export default function VideoPage() {
         try {
           // Guardar ejercicio como completado
           const saved = localStorage.getItem("completedExercises") 
-          let completedExercises = saved ? JSON.parse(saved) : []
+          const completedExercises = saved ? JSON.parse(saved) : []
           
           if (!completedExercises.includes("video")) {
             completedExercises.push("video")
             localStorage.setItem("completedExercises", JSON.stringify(completedExercises))
           }
           
+          // Incluir datos de análisis en los resultados
+          const analysisData = {
+            totalFrames: uploadedFrames.length,
+            framesWithFace: stats.withFace,
+            framesWithoutFace: stats.withoutFace,
+            attentionPercentage: stats.withFace > 0 ? (stats.withFace / uploadedFrames.length) * 100 : 0,
+            sessionId: sessionId
+          };
+          
           // Guardar resultado específico en formato compatible con resultados.tsx
           const videoResult = {
             id: "video",
             name: "Análisis de Comportamiento por Video",
-            score: score,
+            score: finalScore,
             maxScore: 100,
             description: "Evalúa las expresiones faciales, contacto visual y seguimiento de instrucciones.",
             feedback: feedback,
-            date: new Date().toISOString()
+            date: new Date().toISOString(),
+            metadata: {
+              analysisData
+            }
           };
           
           // Actualizar testResults en localStorage
           try {
             // Primero intentamos obtener los resultados existentes
             const savedResultsData = localStorage.getItem("testResultsData");
-            let resultsData = savedResultsData ? JSON.parse(savedResultsData) : [];
+            const resultsData = savedResultsData ? JSON.parse(savedResultsData) : [];
             
             // Buscar si ya existe un resultado para este test
-            const existingIndex = resultsData.findIndex((test: any) => test.id === "video");
+            const existingIndex = resultsData.findIndex((test: { id: string }) => test.id === "video");
             
             if (existingIndex >= 0) {
               // Actualizar el resultado existente
@@ -339,12 +694,13 @@ export default function VideoPage() {
           
           // También mantener el formato anterior para compatibilidad
           const savedResults = localStorage.getItem("testResults") 
-          let testResults = savedResults ? JSON.parse(savedResults) : {}
+          const testResults = savedResults ? JSON.parse(savedResults) : {}
           
           testResults.video = {
-            score: score,
+            score: finalScore,
             feedback: feedback,
-            date: new Date().toISOString()
+            date: new Date().toISOString(),
+            analysisData
           }
           
           localStorage.setItem("testResults", JSON.stringify(testResults))
@@ -352,7 +708,7 @@ export default function VideoPage() {
           console.error("Error updating results:", e)
         }
       }
-    }, 3000);
+    }, 2000);
   };
 
   const completeExercise = () => {
@@ -365,17 +721,203 @@ export default function VideoPage() {
     router.push("/resultados");
   };
 
-  // Solicitar permiso para la cámara y comenzar la grabación
+  // Verificar estado de subidas
+  const checkUploadStatus = () => {
+    return {
+      total: uploadedFrames.length,
+      success: uploadedFrames.filter(f => f.status === 'success').length,
+      error: uploadedFrames.filter(f => f.status === 'error').length,
+      withFace: uploadedFrames.filter(f => f.hasFace === true).length,
+      withoutFace: uploadedFrames.filter(f => f.hasFace === false).length
+    };
+  };
+
+  // Renderiza la lista de frames subidos
+  const FramesUploadedList = () => {
+    const uploadStats = checkUploadStatus();
+    
+    if (uploadedFrames.length === 0) {
+      return (
+        <div className="text-sm text-gray-500 p-3 bg-gray-100 rounded-md">
+          No hay frames subidos todavía.
+        </div>
+      );
+    }
+
+    // Calcular estadísticas de atención
+    const attentionFrames = uploadedFrames.filter(f => f.hasFace === true);
+    const attentionPercentage = attentionFrames.length > 0 
+      ? Math.round((attentionFrames.length / uploadedFrames.length) * 100) 
+      : 0;
+    
+    // Procesar los detalles faciales para calcular puntuaciones de atención
+    const attentionScores = attentionFrames
+      .filter(frame => frame.faceDetails)
+      .map(frame => {
+        // Calcular puntuación con la función existente
+        const score = calculateAttentionScore(frame.faceDetails);
+        return {
+          frameId: frame.id,
+          score: score,
+          // Clasificar el nivel de atención basado en la puntuación CON UMBRAL MÁS ESTRICTO
+          level: score >= 8 ? 'high' : (score >= 5 ? 'medium' : 'low')
+        };
+      });
+    
+    // Calcular la puntuación promedio de atención
+    const averageAttention = attentionScores.length > 0
+      ? attentionScores.reduce((sum, item) => sum + item.score, 0) / attentionScores.length
+      : 0;
+    
+    // Calcular porcentaje de frames con alta atención (puntuación >= 7)
+    const highAttentionFrames = attentionScores.filter(frame => frame.level === 'high');
+    const highAttentionPercentage = attentionScores.length > 0
+      ? Math.round((highAttentionFrames.length / attentionScores.length) * 100)
+      : 0;
+
+    return (
+      <div className="text-sm">
+        <div className="space-y-2">
+          {/* Estadísticas de atención - versión mejorada */}
+          {attentionFrames.length > 0 && (
+            <div className="p-2 bg-blue-50 rounded-md border border-blue-100">
+              <div className="font-medium text-blue-800 text-center">
+                {attentionPercentage}% de presencia facial
+              </div>
+              
+              {/* Detalles de presencia */}
+              <div className="flex justify-between text-xs mt-1 mb-2">
+                <span className="text-blue-600">
+                  <strong>{attentionFrames.length}</strong> de {uploadedFrames.length} frames con rostro
+                </span>
+                <span className={uploadStats.error > 0 ? "text-orange-500" : "text-green-500"}>
+                  {uploadStats.error > 0 ? `${uploadStats.error} errores` : "Sin errores"}
+                </span>
+              </div>
+              
+              {/* Medidor visual de atención */}
+              {attentionScores.length > 0 && (
+                <div className="mt-2">
+                  <div className="flex justify-between items-center text-xs mb-1">
+                    <span className="font-medium text-blue-700">
+                      Calidad de atención: {averageAttention.toFixed(1)}/10
+                    </span>
+                    <span className={`px-1.5 py-0.5 rounded font-semibold ${
+                      highAttentionPercentage >= 70 ? "bg-green-100 text-green-800" : 
+                      highAttentionPercentage >= 40 ? "bg-yellow-100 text-yellow-800" : 
+                      "bg-red-100 text-red-800"
+                    }`}>
+                      {highAttentionPercentage}% óptima
+                    </span>
+                  </div>
+                  
+                  {/* Barra de puntuaciones */}
+                  <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-gradient-to-r from-red-500 via-yellow-500 to-green-500"
+                      style={{ 
+                        width: `${Math.min(100, Math.max(0, averageAttention * 10))}%`,
+                        transition: 'width 0.5s ease'
+                      }}
+                    ></div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          
+          {/* Lista de frames con indicadores mejorados */}
+          <div className="max-h-40 overflow-y-auto border rounded-md">
+            {uploadedFrames.map((frame, index) => {
+              // Calcular la puntuación para este frame si tiene datos faciales
+              const frameScore = frame.faceDetails ? calculateAttentionScore(frame.faceDetails) : null;
+              
+              // Determinar el nivel de atención y el color correspondiente
+              let attentionLevel = "";
+              let bgColor = "";
+              let textColor = "";
+              
+              if (frame.hasFace === true) {
+                if (frameScore !== null) {
+                  // UMBRALES MÁS ESTRICTOS: >=8 atento, >=5 parcial, <5 distraído
+                  if (frameScore >= 8) {
+                    attentionLevel = "Atento";
+                    bgColor = "bg-green-100";
+                    textColor = "text-green-800";
+                  } else if (frameScore >= 5) {
+                    attentionLevel = "Parcial";
+                    bgColor = "bg-yellow-100";
+                    textColor = "text-yellow-800";
+                  } else {
+                    attentionLevel = "Distraído";
+                    bgColor = "bg-orange-100";
+                    textColor = "text-orange-800";
+                  }
+                } else {
+                  attentionLevel = "Rostro";
+                  bgColor = "bg-blue-100";
+                  textColor = "text-blue-800";
+                }
+              } else {
+                attentionLevel = "Sin rostro";
+                bgColor = "bg-red-100";
+                textColor = "text-red-800";
+              }
+              
+              return (
+                <div key={index} className="flex items-center text-xs p-1.5 border-b last:border-0 hover:bg-gray-50">
+                  <div className={`mr-2 ${frame.status === 'success' ? 'text-green-500' : 'text-red-500'}`}>
+                    {frame.status === 'success' ? <Check size={14} /> : <AlertCircle size={14} />}
+                  </div>
+                  <div className="flex-1">
+                    Frame-{frame.id}.jpg
+                  </div>
+                  <div className={`text-xs px-1.5 py-0.5 rounded ${bgColor} ${textColor}`}>
+                    {frameScore !== null ? `${attentionLevel} (${frameScore.toFixed(1)})` : attentionLevel}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Iniciar grabación y configurar la captura de frames
   const startRecording = () => {
-    // Ya no intentamos configurar la cámara aquí, eso lo hace el componente SimpleCamera
-    setCameraPermission(true); // Asumimos que tenemos permiso
+    setCameraPermission(true);
     setStep("recording");
     
+    // Limpiar frames anteriores
+    setUploadedFrames([]);
+    frameCountRef.current = 0;
+    
     console.log("Iniciando grabación - temporizador gestionado por script DOM");
+    
+    // Generar ID único para la sesión
+    const newSessionId = uuidv4();
+    setSessionId(newSessionId);
+    console.log("Nueva sesión de grabación:", newSessionId);
     
     // Inicializar los estados (el temporizador real lo gestiona el script DOM)
     setTimeLeft(60);
     setProgress(0);
+
+    // Programar la primera captura con un pequeño retraso
+    console.log("Programando captura de frames cada segundo");
+    setTimeout(() => {
+      // Intentar capturar un frame inmediatamente
+      captureVideoFrame();
+      
+      // Configurar captura periódica
+      if (frameIntervalRef.current) {
+        clearInterval(frameIntervalRef.current);
+      }
+      
+      frameIntervalRef.current = setInterval(captureVideoFrame, 1000);
+      console.log("Intervalo de captura configurado:", frameIntervalRef.current);
+    }, 1500);
   };
 
   const stopRecording = () => {
@@ -439,9 +981,16 @@ export default function VideoPage() {
   // SimpleCamera con implementación ultra básica sin efectos secundarios
   const SimpleCamera = () => {
     // Referencias para evitar rerenderizados
-    const videoRef = useRef<HTMLVideoElement>(null);
+    const localVideoRef = useRef<HTMLVideoElement>(null);
     const errorRef = useRef<HTMLDivElement>(null);
     const loadingRef = useRef<HTMLDivElement>(null);
+    
+    // Al montar, asignar la referencia local a la global
+    useEffect(() => {
+      if (localVideoRef.current) {
+        videoRef.current = localVideoRef.current;
+      }
+    }, []);
     
     // Configurar cámara apenas se monte el componente
     useEffect(() => {
@@ -476,15 +1025,15 @@ export default function VideoPage() {
           streamRef.current = stream;
           
           // Asignar al video local
-          if (videoRef.current) {
-            videoRef.current.srcObject = stream;
+          if (localVideoRef.current) {
+            localVideoRef.current.srcObject = stream;
             
             // Configurar manejador para cuando esté listo
             const onLoadedMetadata = () => {
               if (!isMounted) return;
               
               console.log(`[Camera ${componentId}] Metadatos cargados, reproduciendo`);
-              videoRef.current?.play().catch(e => {
+              localVideoRef.current?.play().catch(e => {
                 console.error(`[Camera ${componentId}] Error al reproducir:`, e);
                 if (errorRef.current && isMounted) {
                   errorRef.current.style.display = "flex";
@@ -501,14 +1050,25 @@ export default function VideoPage() {
               if (loadingRef.current) {
                 loadingRef.current.style.display = "none";
               }
+              
+              // Actualizar la referencia global
+              videoRef.current = localVideoRef.current;
+              
+              // Probar captura después de que la cámara esté lista
+              setTimeout(() => {
+                if (isMounted) {
+                  console.log("Probando captura inicial de frame...");
+                  captureVideoFrame();
+                }
+              }, 1000);
             };
             
             // Limpiar y agregar listeners
-            videoRef.current.removeEventListener('loadedmetadata', onLoadedMetadata);
-            videoRef.current.removeEventListener('playing', onPlaying);
+            localVideoRef.current.removeEventListener('loadedmetadata', onLoadedMetadata);
+            localVideoRef.current.removeEventListener('playing', onPlaying);
             
-            videoRef.current.addEventListener('loadedmetadata', onLoadedMetadata);
-            videoRef.current.addEventListener('playing', onPlaying);
+            localVideoRef.current.addEventListener('loadedmetadata', onLoadedMetadata);
+            localVideoRef.current.addEventListener('playing', onPlaying);
           }
         } catch (err) {
           console.error(`[Camera ${componentId}] Error accediendo a cámara:`, err);
@@ -532,19 +1092,19 @@ export default function VideoPage() {
         isMounted = false;
         
         // Limpiar stream
-        if (videoRef.current && videoRef.current.srcObject) {
-          const stream = videoRef.current.srcObject as MediaStream;
+        if (localVideoRef.current && localVideoRef.current.srcObject) {
+          const stream = localVideoRef.current.srcObject as MediaStream;
           stream.getTracks().forEach(track => {
             console.log(`[Camera ${componentId}] Deteniendo track:`, track.kind);
             track.stop();
           });
-          videoRef.current.srcObject = null;
+          localVideoRef.current.srcObject = null;
         }
         
         // Limpiar listeners si es necesario
-        if (videoRef.current) {
-          videoRef.current.onloadedmetadata = null;
-          videoRef.current.onplaying = null;
+        if (localVideoRef.current) {
+          localVideoRef.current.onloadedmetadata = null;
+          localVideoRef.current.onplaying = null;
         }
       };
     }, []);
@@ -559,8 +1119,8 @@ export default function VideoPage() {
         streamRef.current.getTracks().forEach(track => track.stop());
       }
       
-      if (videoRef.current) {
-        videoRef.current.srcObject = null;
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = null;
       }
       
       // Reintentar después de un momento
@@ -576,9 +1136,11 @@ export default function VideoPage() {
           
           streamRef.current = stream;
           
-          if (videoRef.current) {
-            videoRef.current.srcObject = stream;
-            videoRef.current.play().then(() => {
+          if (localVideoRef.current) {
+            localVideoRef.current.srcObject = stream;
+            videoRef.current = localVideoRef.current; // Actualizar ref global
+            
+            localVideoRef.current.play().then(() => {
               setCameraPermission(true);
               if (loadingRef.current) {
                 loadingRef.current.style.display = "none";
@@ -609,7 +1171,7 @@ export default function VideoPage() {
       <div className="bg-black rounded-lg overflow-hidden w-full h-full min-h-64 relative">
         {/* Video simple */}
         <video 
-          ref={videoRef} 
+          ref={localVideoRef} 
           style={{
             width: '100%',
             height: '100%',
@@ -918,6 +1480,22 @@ export default function VideoPage() {
             {/* Timer UI - siempre presente en el DOM pero condicionalmente visible */}
             <div className={`flex justify-between text-sm text-muted-foreground ${step !== "recording" ? "opacity-0 absolute" : ""}`}>
               <span ref={timeTextRef} id="timeText">Tiempo restante: {timeLeft}s</span>
+              
+              {/* Información de estado de uploads */}
+              {step === "recording" && (
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={() => setShowFramesList(!showFramesList)}
+                  className="text-xs px-2 py-0.5 h-auto"
+                >
+                  {uploadedFrames.length > 0 ? (
+                    <>{checkUploadStatus().success}/{uploadedFrames.length} frames</>
+                  ) : (
+                    <>Sin frames</>
+                  )}
+                </Button>
+              )}
               </div>
             
             {step === "analyzing" && (
@@ -948,8 +1526,8 @@ export default function VideoPage() {
                   </p>
                   <p className="text-sm text-muted-foreground mb-2">
                     <strong>IMPORTANTE:</strong> Es necesario permitir el acceso a tu cámara para realizar este ejercicio. 
-                    Cuando hagas clic en "Comenzar actividad", el navegador te solicitará permisos para acceder a tu cámara. 
-                    <strong> Debes hacer clic en "Permitir" o "Aceptar" cuando aparezca el mensaje.</strong>
+                    Cuando hagas clic en &quot;Comenzar actividad&quot;, el navegador te solicitará permisos para acceder a tu cámara. 
+                    <strong> Debes hacer clic en &quot;Permitir&quot; o &quot;Aceptar&quot; cuando aparezca el mensaje.</strong>
                   </p>
                   
                   <p className="text-sm text-muted-foreground mb-2">
@@ -961,7 +1539,7 @@ export default function VideoPage() {
                     <li>Mantén la mirada hacia adelante si usas cámara</li>
                   </ol>
                   <p className="text-sm text-muted-foreground">
-                    <strong>Nota:</strong> Si tu navegador te solicita permisos, debes hacer clic en "Permitir" para continuar.
+                    <strong>Nota:</strong> Si tu navegador te solicita permisos, debes hacer clic en &quot;Permitir&quot; para continuar.
                   </p>
                 </div>
                 
@@ -1007,6 +1585,44 @@ export default function VideoPage() {
                     </div>
                   </div>
                 </div>
+                
+                {/* Información ampliada sobre frames capturados */}
+                {uploadedFrames.length > 0 && (
+                  <div className="bg-white border rounded-lg p-3 mb-2">
+                    <div className="flex justify-between items-center mb-2">
+                      <h3 className="font-medium">Seguimiento de atención</h3>
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="text-green-600">
+                          <Check size={14} className="inline mr-1" />
+                          {checkUploadStatus().success} subidos
+                        </span>
+                        {checkUploadStatus().withFace > 0 && (
+                          <span className="text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
+                            {checkUploadStatus().withFace} atento
+                          </span>
+                        )}
+                        {checkUploadStatus().withoutFace > 0 && (
+                          <span className="text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full">
+                            {checkUploadStatus().withoutFace} distraído
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    
+                    {/* Información del bucket */}
+                    <div className="text-xs text-gray-500 mb-2">
+                      <div>ID Sesión: <span className="font-mono">{sessionId}</span></div>
+                      <div>Bucket: neurospot-data/videos/{sessionId}/</div>
+                    </div>
+                    
+                    {/* Mostrar lista de frames si está expandido */}
+                    {showFramesList && (
+                      <div className="max-h-32 overflow-y-auto border rounded-md mt-2">
+                        <FramesUploadedList />
+                      </div>
+                    )}
+                  </div>
+                )}
                 
                 <div className="relative bg-black rounded-lg overflow-hidden flex-1 flex items-center justify-center">
                   {isLoading ? (
