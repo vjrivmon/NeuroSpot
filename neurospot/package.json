@@ -11,8 +11,10 @@
     "deploy": "next build"
   },
   "dependencies": {
+    "@aws-sdk/client-comprehend": "^3.474.0",
     "@aws-sdk/client-rekognition": "^3.803.0",
     "@aws-sdk/client-s3": "^3.804.0",
+    "@aws-sdk/client-transcribe": "^3.474.0",
     "@aws-sdk/credential-providers": "^3.803.0",
     "@aws-sdk/s3-request-presigner": "^3.804.0",
     "@hookform/resolvers": "^3.9.1",

@@ -16,7 +16,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { PauseCircle, Mic, MicOff, ArrowRight, Check, Save } from "lucide-react"
+import { PauseCircle, Mic, MicOff, ArrowRight, Check, Save, Loader2 } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
 const textoLectura = `El sol brillaba en el cielo azul mientras los pájaros cantaban alegremente entre los árboles del parque. Un niño jugaba con su perro cerca del lago, lanzando una pelota que el animal perseguía con entusiasmo. Cerca de allí, algunas personas disfrutaban de un picnic sobre el césped verde, compartiendo risas y comida. El viento suave movía las hojas de los árboles creando una melodía relajante que invitaba a quedarse un rato más.`
@@ -29,6 +29,10 @@ export default function LecturaPage() {
   const [showDialog, setShowDialog] = useState(false)
   const [recordingSaved, setRecordingSaved] = useState(false)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
+  const [transcriptionStatus, setTranscriptionStatus] = useState<'idle' | 'processing' | 'completed'>('idle')
+  const [transcriptionJobName, setTranscriptionJobName] = useState<string | null>(null)
+  const [transcribedText, setTranscribedText] = useState<string | null>(null)
+  const [readingAccuracy, setReadingAccuracy] = useState<number | null>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
   const router = useRouter()
@@ -60,11 +64,41 @@ export default function LecturaPage() {
     };
   }, [recording, completed]);
 
+  // Efecto para verificar el estado de la transcripción
+  useEffect(() => {
+    let interval: NodeJS.Timeout | null = null;
+    
+    if (transcriptionStatus === 'processing' && transcriptionJobName) {
+      interval = setInterval(async () => {
+        try {
+          const response = await fetch(`/api/transcribe?jobName=${transcriptionJobName}&originalText=${encodeURIComponent(textoLectura)}`);
+          const data = await response.json();
+          
+          if (data.status === 'COMPLETED') {
+            setTranscriptionStatus('completed');
+            setTranscribedText(data.transcribedText);
+            setReadingAccuracy(data.accuracy);
+            clearInterval(interval as NodeJS.Timeout);
+          }
+        } catch (error) {
+          console.error("Error al verificar estado de transcripción:", error);
+        }
+      }, 5000); // Verificar cada 5 segundos
+    }
+    
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [transcriptionStatus, transcriptionJobName]);
+
   const startRecording = async () => {
     try {
       // Reset states if starting a new recording
       setRecordingSaved(false);
       setAudioUrl(null);
+      setTranscriptionStatus('idle');
+      setTranscribedText(null);
+      setReadingAccuracy(null);
       
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mediaRecorder = new MediaRecorder(stream);
@@ -91,7 +125,8 @@ export default function LecturaPage() {
         // Cerrar los tracks de audio para liberar el micrófono
         stream.getTracks().forEach(track => track.stop());
         
-        console.log("Grabación completada y guardada:", audioBlob);
+        // Iniciar el proceso de transcripción
+        startTranscription(audioBlob);
       };
 
       mediaRecorder.start();
@@ -99,6 +134,58 @@ export default function LecturaPage() {
     } catch (error) {
       console.error("Error al acceder al micrófono:", error);
       alert("No se pudo acceder al micrófono. Por favor, verifica los permisos.");
+    }
+  };
+
+  const startTranscription = async (audioBlob: Blob) => {
+    try {
+      setTranscriptionStatus('processing');
+      
+      // Crear FormData para enviar el archivo
+      const formData = new FormData();
+      formData.append('audio', audioBlob, 'audio.wav');
+      formData.append('originalText', textoLectura);
+      
+      // Obtener userId del localStorage (si está disponible)
+      let userId = 'anonymous';
+      if (typeof window !== 'undefined') {
+        const storedUserId = localStorage.getItem('userId');
+        if (storedUserId) userId = storedUserId;
+      }
+      formData.append('userId', userId);
+      
+      console.log("Iniciando transcripción para el usuario:", userId);
+      console.log("Tamaño del archivo de audio:", Math.round(audioBlob.size / 1024), "KB");
+      
+      // Enviar solicitud al endpoint de transcripción
+      const response = await fetch('/api/transcribe', {
+        method: 'POST',
+        body: formData,
+      });
+      
+      if (!response.ok) {
+        console.error("Error en la respuesta del servidor:", response.status, response.statusText);
+        throw new Error(`Error en la respuesta: ${response.status} ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        console.log("Transcripción iniciada exitosamente. Job:", data.jobName);
+        setTranscriptionJobName(data.jobName);
+      } else {
+        console.error("Error al iniciar transcripción:", data.error);
+        alert(`Error al iniciar transcripción: ${data.error}`);
+        setTranscriptionStatus('idle');
+      }
+    } catch (error) {
+      console.error("Error al enviar audio para transcripción:", error);
+      let errorMessage = "Error desconocido";
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      alert(`Error al procesar el audio: ${errorMessage}`);
+      setTranscriptionStatus('idle');
     }
   };
 
@@ -189,6 +276,49 @@ export default function LecturaPage() {
                   </div>
                 </Alert>
               )}
+              
+              {transcriptionStatus === 'processing' && (
+                <Alert className="bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800">
+                  <Loader2 className="h-4 w-4 text-blue-600 dark:text-blue-400 animate-spin" />
+                  <AlertTitle className="text-blue-800 dark:text-blue-300">Procesando audio...</AlertTitle>
+                  <AlertDescription className="text-blue-700 dark:text-blue-400 text-sm">
+                    Estamos analizando tu grabación. Esto puede tardar unos segundos.
+                  </AlertDescription>
+                </Alert>
+              )}
+              
+              {transcriptionStatus === 'completed' && readingAccuracy !== null && (
+                <Alert className={readingAccuracy > 70 
+                  ? "bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800" 
+                  : "bg-amber-50 border-amber-200 dark:bg-amber-900/20 dark:border-amber-800"}>
+                  {readingAccuracy > 70 
+                    ? <Check className="h-4 w-4 text-green-600 dark:text-green-400" />
+                    : <Save className="h-4 w-4 text-amber-600 dark:text-amber-400" />}
+                  <div>
+                    <AlertTitle className={readingAccuracy > 70 
+                      ? "text-green-800 dark:text-green-300" 
+                      : "text-amber-800 dark:text-amber-300"}>
+                      Análisis de lectura completado
+                    </AlertTitle>
+                    <AlertDescription className={readingAccuracy > 70 
+                      ? "text-green-700 dark:text-green-400 text-sm" 
+                      : "text-amber-700 dark:text-amber-400 text-sm"}>
+                      <div className="mt-1">
+                        <p className="font-medium">Precisión de lectura: {readingAccuracy}%</p>
+                        {readingAccuracy > 70 
+                          ? <p className="text-xs mt-1">¡Excelente trabajo! Tu lectura es muy precisa.</p>
+                          : <p className="text-xs mt-1">Sigue practicando para mejorar tu precisión de lectura.</p>}
+                      </div>
+                      {transcribedText && (
+                        <div className="mt-3 p-2 bg-white/50 dark:bg-gray-800/50 rounded border border-current/10 text-xs">
+                          <p className="font-medium mb-1">Texto transcrito:</p>
+                          <p className="text-gray-600 dark:text-gray-300">{transcribedText}</p>
+                        </div>
+                      )}
+                    </AlertDescription>
+                  </div>
+                </Alert>
+              )}
             </div>
 
             <div className="mt-4">
@@ -211,8 +341,17 @@ export default function LecturaPage() {
                 <Button 
                   className="w-full h-12 text-white font-medium bg-[#3876F4] hover:bg-[#3876F4]/90"
                   onClick={handleContinue}
+                  disabled={transcriptionStatus === 'processing'}
                 >
-                  <ArrowRight className="mr-2 h-5 w-5" /> Continuar con la siguiente prueba
+                  {transcriptionStatus === 'processing' ? (
+                    <>
+                      <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Procesando...
+                    </>
+                  ) : (
+                    <>
+                      <ArrowRight className="mr-2 h-5 w-5" /> Continuar con la siguiente prueba
+                    </>
+                  )}
                 </Button>
               )}
             </div>
