@@ -16,9 +16,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { PauseCircle, PlayCircle, AlertCircle, CheckCircle2, Clock } from "lucide-react"
+import { PauseCircle, AlertCircle, CheckCircle2, Clock } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Badge } from "@/components/ui/badge"
 
 type ResultsType = {
   correctResponses: number;
@@ -47,7 +46,6 @@ export default function AtencionPage() {
   const [gamePaused, setGamePaused] = useState(false)
   const [gameFinished, setGameFinished] = useState(false)
   const [showFeedback, setShowFeedback] = useState(false)
-  const [feedbackText, setFeedbackText] = useState("")
   const [feedbackType, setFeedbackType] = useState<"success" | "error" | null>(null)
   const [results, setResults] = useState<ResultsType>({
     correctResponses: 0,
@@ -56,11 +54,10 @@ export default function AtencionPage() {
     reactionTimes: []
   })
   const [stimulusStartTime, setStimulusStartTime] = useState<number | null>(null)
-  const [targetLetter, setTargetLetter] = useState('X')
+  const [targetLetter] = useState('X')
   
   // Control de niveles
   const [currentLevel, setCurrentLevel] = useState(0) // 0, 1, 2 para los tres niveles
-  const [levelTimeLeft, setLevelTimeLeft] = useState(0)
   const [showLevelTransition, setShowLevelTransition] = useState(false)
   
   // Referencias para los intervalos
@@ -74,21 +71,21 @@ export default function AtencionPage() {
   const levels: LevelType[] = [
     {
       name: "Nivel 1: Fácil",
-      duration: 30, // 30 segundos
-      interval: 4000, // 4 segundos
-      targetProbability: 0.20 // 20% de probabilidad
+      duration: 25, // 30 segundos
+      interval: 1000, // 4 segundos
+      targetProbability: 0.25 // 20% de probabilidad
     },
     {
       name: "Nivel 2: Medio",
       duration: 20, // 20 segundos
-      interval: 3000, // 3 segundos
-      targetProbability: 0.25 // 25% de probabilidad
+      interval: 500, // 3 segundos
+      targetProbability: 0.15 // 25% de probabilidad
     },
     {
       name: "Nivel 3: Difícil",
-      duration: 10, // 10 segundos
-      interval: 2000, // 2 segundos
-      targetProbability: 0.30 // 30% de probabilidad
+      duration: 15, // 10 segundos
+      interval: 250, // 2 segundos
+      targetProbability: 0.10 // 30% de probabilidad
     }
   ]
 
@@ -119,8 +116,11 @@ export default function AtencionPage() {
   const generateLetter = useCallback(() => {
     if (gamePaused || gameFinished || showLevelTransition) return
     
-    // Usar la probabilidad del nivel actual
-    const showTarget = Math.random() < levels[currentLevel].targetProbability
+    // Si la letra actual es la target, asegurarnos de que la siguiente no lo sea
+    let showTarget = Math.random() < levels[currentLevel].targetProbability
+    if (currentLetter === targetLetter) {
+      showTarget = false
+    }
     
     let newLetter;
     
@@ -168,50 +168,23 @@ export default function AtencionPage() {
     console.log(`Timer de letras iniciado para nivel ${currentLevel + 1}, intervalo: ${levels[currentLevel].interval}ms`)
   }, [generateLetter, currentLevel, levels])
 
-  // Función para actualizar el tiempo (separada para mejor mantenimiento)
-  const updateTimers = useCallback(() => {
-    setTimeLeft(prevTime => {
-      const newTime = prevTime - 1
-        if (newTime <= 0) {
-        console.log("Tiempo total agotado, terminando juego")
-        setGameFinished(true)
-        clearAllTimers()
-        return 0
-      }
-      return newTime
-    })
-    
-    setLevelTimeLeft(prevLevelTime => {
-      const newLevelTime = prevLevelTime - 1
-      if (newLevelTime <= 0) {
-        const nextLevel = currentLevel + 1
-        if (nextLevel < levels.length) {
-          console.log(`Tiempo de nivel agotado, cambiando al nivel ${nextLevel + 1}`)
-          // Usar setTimeout para evitar la dependencia circular
-          setTimeout(() => {
-            startLevel(nextLevel)
-          }, 0)
-        } else {
-          console.log("Último nivel completado, terminando juego")
-          setGameFinished(true)
-          clearAllTimers()
-        }
-        return 0
-      }
-      return newLevelTime
-    })
-  }, [currentLevel, levels.length, clearAllTimers])
-
   // Iniciar un nuevo nivel
   const startLevel = useCallback((level: number) => {
     console.log(`Iniciando nivel ${level + 1}, duración: ${levels[level].duration}s`)
     
-    // Limpiar cualquier timer existente
-    clearAllTimers()
+    // Limpiar solo el timer de letras, no el timer principal
+    if (letterTimerRef.current) {
+      clearInterval(letterTimerRef.current)
+      letterTimerRef.current = null
+    }
     
-    // Actualizar el nivel y configurar su tiempo
+    if (transitionTimerRef.current) {
+      clearTimeout(transitionTimerRef.current)
+      transitionTimerRef.current = null
+    }
+    
+    // Actualizar el nivel 
     setCurrentLevel(level)
-    setLevelTimeLeft(levels[level].duration)
     
     // Mostrar transición de nivel
     setShowLevelTransition(true)
@@ -221,14 +194,11 @@ export default function AtencionPage() {
     transitionTimerRef.current = setTimeout(() => {
       setShowLevelTransition(false)
       
-      // Reanudar el temporizador principal si se detuvo
-      gameTimerRef.current = setInterval(updateTimers, 1000)
-      
       // Iniciar el timer de letras con el intervalo del nivel actual
       startLetterTimer()
     }, 1200) // Mostrar transición por 1.2 segundos
     
-  }, [levels, clearAllTimers, startLetterTimer, updateTimers])
+  }, [levels, startLetterTimer])
 
   // Iniciar el juego completo
   const startGame = useCallback(() => {
@@ -252,13 +222,42 @@ export default function AtencionPage() {
       reactionTimes: []
     })
     
-    // Iniciar el primer nivel
-    startLevel(0)
+    // Iniciar el primer nivel sin borrar el timer principal
+    setCurrentLevel(0)
+    startLetterTimer()
     
     // Iniciar el timer principal del juego
-    gameTimerRef.current = setInterval(updateTimers, 1000)
+    gameTimerRef.current = setInterval(() => {
+      setTimeLeft(prevTime => {
+        const newTime = prevTime - 1;
+        
+        // Actualizar la barra de progreso síncronamente
+        const elapsedTime = TOTAL_TIME - newTime;
+        const progressValue = (elapsedTime / TOTAL_TIME) * 100;
+        setProgress(Math.min(100, progressValue));
+        
+        // Terminar juego si llega a 0
+        if (newTime <= 0) {
+          console.log("Tiempo total agotado, terminando juego");
+          setGameFinished(true);
+          clearAllTimers();
+          return 0;
+        }
+        
+        // Cambiar de nivel en los tiempos adecuados
+        if (elapsedTime === 30 && currentLevel === 0) {
+          console.log("Cambiando a nivel 2");
+          startLevel(1);
+        } else if (elapsedTime === 50 && currentLevel === 1) {
+          console.log("Cambiando a nivel 3");
+          startLevel(2);
+        }
+        
+        return newTime;
+      });
+    }, 1000);
     
-  }, [clearAllTimers, startLevel, updateTimers, TOTAL_TIME])
+  }, [clearAllTimers, startLevel, TOTAL_TIME, startLetterTimer, currentLevel])
 
   // Pausar el juego
   const pauseGame = useCallback(() => {
@@ -275,12 +274,40 @@ export default function AtencionPage() {
     setShowDialog(false)
     
     // Reiniciar el timer principal
-    gameTimerRef.current = setInterval(updateTimers, 1000)
+    gameTimerRef.current = setInterval(() => {
+      setTimeLeft(prevTime => {
+        const newTime = prevTime - 1;
+        
+        // Actualizar la barra de progreso síncronamente
+        const elapsedTime = TOTAL_TIME - newTime;
+        const progressValue = (elapsedTime / TOTAL_TIME) * 100;
+        setProgress(Math.min(100, progressValue));
+        
+        // Terminar juego si llega a 0
+        if (newTime <= 0) {
+          console.log("Tiempo total agotado, terminando juego");
+          setGameFinished(true);
+          clearAllTimers();
+          return 0;
+        }
+        
+        // Cambiar de nivel en los tiempos adecuados
+        if (elapsedTime === 30 && currentLevel === 0) {
+          console.log("Cambiando a nivel 2");
+          startLevel(1);
+        } else if (elapsedTime === 50 && currentLevel === 1) {
+          console.log("Cambiando a nivel 3");
+          startLevel(2);
+        }
+        
+        return newTime;
+      });
+    }, 1000);
     
     // Reiniciar el timer de letras
     startLetterTimer()
     
-  }, [clearAllTimers, updateTimers, startLetterTimer])
+  }, [clearAllTimers, startLetterTimer, TOTAL_TIME, currentLevel, startLevel])
 
   // Procesar clic del usuario
   const handleButtonPress = useCallback(() => {
@@ -296,7 +323,6 @@ export default function AtencionPage() {
         reactionTimes: [...prev.reactionTimes, reactionTime]
       }))
       setFeedbackType("success")
-      setFeedbackText("¡Correcto!")
     } else {
       // Error de comisión: presionó cuando no debía
       setResults(prev => ({
@@ -304,7 +330,6 @@ export default function AtencionPage() {
         commissionErrors: prev.commissionErrors + 1
       }))
       setFeedbackType("error")
-      setFeedbackText("¡Incorrecto!")
     }
     
     setShowFeedback(true)
@@ -327,7 +352,7 @@ export default function AtencionPage() {
         
         // Marcar como completado
         const saved = localStorage.getItem("completedExercises")
-        let completedExercises = saved ? JSON.parse(saved) : []
+        const completedExercises = saved ? JSON.parse(saved) : []
         
         if (!completedExercises.includes("atencion")) {
           completedExercises.push("atencion")
@@ -347,14 +372,6 @@ export default function AtencionPage() {
     }
   }, [gameFinished, gamePaused, clearAllTimers, completeTest])
 
-  // Actualizar el progreso cuando cambia el tiempo
-  useEffect(() => {
-    if (gameStarted && !gamePaused && !gameFinished) {
-      const newProgress = ((TOTAL_TIME - timeLeft) / TOTAL_TIME) * 100
-      setProgress(newProgress > 100 ? 100 : newProgress)
-    }
-  }, [timeLeft, gameStarted, gamePaused, gameFinished, TOTAL_TIME])
-
   // Sistema de seguridad para evitar que se quede bloqueado en la transición
   useEffect(() => {
     if (showLevelTransition) {
@@ -364,18 +381,13 @@ export default function AtencionPage() {
         
         // Asegurar que se genera una letra si el juego aún está activo
         if (gameStarted && !gamePaused && !gameFinished) {
-          // Reanudar el temporizador principal si se detuvo
-          if (!gameTimerRef.current) {
-            gameTimerRef.current = setInterval(updateTimers, 1000)
-          }
-          
           startLetterTimer()
         }
-      }, 2000) // 2 segundos de tiempo máximo para la transición
+      }, 1500) // Reducir a 1.5 segundos para que sea más fluido
       
       return () => clearTimeout(safetyTimer)
     }
-  }, [showLevelTransition, gameStarted, gamePaused, gameFinished, startLetterTimer, updateTimers])
+  }, [showLevelTransition, gameStarted, gamePaused, gameFinished, startLetterTimer])
 
   // Limpiar recursos al desmontar
   useEffect(() => {
@@ -388,19 +400,6 @@ export default function AtencionPage() {
     <main className="min-h-screen flex flex-col">
       <Header showBackButton />
       
-      {/* Barra de progreso global - Oculta */}
-      <div className="hidden">
-        <div className="container max-w-4xl mx-auto">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-sm font-medium text-blue-800 dark:text-blue-200">Prueba 3 de 5: Test de Atención Continua</h3>
-            <span className="text-xs text-blue-600 dark:text-blue-300">60% completado</span>
-          </div>
-          <div className="w-full bg-white dark:bg-gray-800 rounded-full h-2.5">
-            <div className="bg-[#3876F4] h-2.5 rounded-full" style={{ width: '60%' }}></div>
-          </div>
-        </div>
-      </div>
-
       <div className="container max-w-full mx-auto px-6 pt-6 pb-4 flex flex-col">
         <Card className="border-none shadow-lg flex flex-col w-full max-w-6xl mx-auto h-auto">
           <CardHeader className="pb-4 border-b">
@@ -418,14 +417,7 @@ export default function AtencionPage() {
             <div className="flex justify-between text-sm text-muted-foreground">
               <div className="flex items-center gap-2">
                 <Clock className="h-4 w-4" />
-              <span>Tiempo: {timeLeft}s</span>
-                {gameStarted && !gameFinished && (
-                  <Badge variant="outline" className="ml-2">
-                    {showLevelTransition 
-                      ? levels[currentLevel].name
-                      : `${levels[currentLevel].name} - ${levelTimeLeft}s`}
-                  </Badge>
-                )}
+                <span>Tiempo: {timeLeft}s</span>
               </div>
               <span>
                 Aciertos: {results.correctResponses}
