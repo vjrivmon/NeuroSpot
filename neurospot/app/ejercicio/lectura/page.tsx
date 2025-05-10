@@ -16,7 +16,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { PauseCircle, Mic, MicOff, ArrowRight, Check, Save, Loader2 } from "lucide-react"
+import { PauseCircle, Mic, MicOff, ArrowRight, Check, Loader2 } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
 const textoLectura = `El sol brillaba en el cielo azul mientras los pájaros cantaban alegremente entre los árboles del parque. Un niño jugaba con su perro cerca del lago, lanzando una pelota que el animal perseguía con entusiasmo. Cerca de allí, algunas personas disfrutaban de un picnic sobre el césped verde, compartiendo risas y comida. El viento suave movía las hojas de los árboles creando una melodía relajante que invitaba a quedarse un rato más.`
@@ -31,8 +31,7 @@ export default function LecturaPage() {
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [transcriptionStatus, setTranscriptionStatus] = useState<'idle' | 'processing' | 'completed'>('idle')
   const [transcriptionJobName, setTranscriptionJobName] = useState<string | null>(null)
-  const [transcribedText, setTranscribedText] = useState<string | null>(null)
-  const [readingAccuracy, setReadingAccuracy] = useState<number | null>(null)
+  const [emocionUsuario, setEmocionUsuario] = useState<string | null>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
   const router = useRouter()
@@ -71,13 +70,12 @@ export default function LecturaPage() {
     if (transcriptionStatus === 'processing' && transcriptionJobName) {
       interval = setInterval(async () => {
         try {
-          const response = await fetch(`/api/transcribe?jobName=${transcriptionJobName}&originalText=${encodeURIComponent(textoLectura)}`);
+          const response = await fetch(`/api/transcribe?jobName=${transcriptionJobName}`);
           const data = await response.json();
           
           if (data.status === 'COMPLETED') {
             setTranscriptionStatus('completed');
-            setTranscribedText(data.transcribedText);
-            setReadingAccuracy(data.accuracy);
+            setEmocionUsuario(data.emocion);
             clearInterval(interval as NodeJS.Timeout);
           }
         } catch (error) {
@@ -97,8 +95,7 @@ export default function LecturaPage() {
       setRecordingSaved(false);
       setAudioUrl(null);
       setTranscriptionStatus('idle');
-      setTranscribedText(null);
-      setReadingAccuracy(null);
+      setEmocionUsuario(null);
       
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mediaRecorder = new MediaRecorder(stream);
@@ -144,7 +141,6 @@ export default function LecturaPage() {
       // Crear FormData para enviar el archivo
       const formData = new FormData();
       formData.append('audio', audioBlob, 'audio.wav');
-      formData.append('originalText', textoLectura);
       
       // Obtener userId del localStorage (si está disponible)
       let userId = 'anonymous';
@@ -154,7 +150,7 @@ export default function LecturaPage() {
       }
       formData.append('userId', userId);
       
-      console.log("Iniciando transcripción para el usuario:", userId);
+      console.log("Iniciando análisis de audio para el usuario:", userId);
       console.log("Tamaño del archivo de audio:", Math.round(audioBlob.size / 1024), "KB");
       
       // Enviar solicitud al endpoint de transcripción
@@ -171,15 +167,22 @@ export default function LecturaPage() {
       const data = await response.json();
       
       if (data.success) {
-        console.log("Transcripción iniciada exitosamente. Job:", data.jobName);
+        console.log("Análisis de audio iniciado exitosamente. Job:", data.jobName);
+        console.log("Emoción detectada:", data.emocion);
         setTranscriptionJobName(data.jobName);
+        
+        // Si ya tenemos la emoción, actualizar el estado directamente
+        if (data.emocion) {
+          setEmocionUsuario(data.emocion);
+          setTranscriptionStatus('completed');
+        }
       } else {
-        console.error("Error al iniciar transcripción:", data.error);
-        alert(`Error al iniciar transcripción: ${data.error}`);
+        console.error("Error al iniciar análisis de audio:", data.error);
+        alert(`Error al iniciar análisis de audio: ${data.error}`);
         setTranscriptionStatus('idle');
       }
     } catch (error) {
-      console.error("Error al enviar audio para transcripción:", error);
+      console.error("Error al enviar audio para análisis:", error);
       let errorMessage = "Error desconocido";
       if (error instanceof Error) {
         errorMessage = error.message;
@@ -201,7 +204,7 @@ export default function LecturaPage() {
     if (typeof window !== 'undefined') {
       try {
         const saved = localStorage.getItem("completedExercises") 
-        let completedExercises = saved ? JSON.parse(saved) : []
+        const completedExercises = saved ? JSON.parse(saved) : []
         
         if (!completedExercises.includes("lectura")) {
           completedExercises.push("lectura")
@@ -287,34 +290,15 @@ export default function LecturaPage() {
                 </Alert>
               )}
               
-              {transcriptionStatus === 'completed' && readingAccuracy !== null && (
-                <Alert className={readingAccuracy > 70 
-                  ? "bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800" 
-                  : "bg-amber-50 border-amber-200 dark:bg-amber-900/20 dark:border-amber-800"}>
-                  {readingAccuracy > 70 
-                    ? <Check className="h-4 w-4 text-green-600 dark:text-green-400" />
-                    : <Save className="h-4 w-4 text-amber-600 dark:text-amber-400" />}
+              {transcriptionStatus === 'completed' && emocionUsuario && (
+                <Alert className="bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800">
+                  <Check className="h-4 w-4 text-green-600 dark:text-green-400" />
                   <div>
-                    <AlertTitle className={readingAccuracy > 70 
-                      ? "text-green-800 dark:text-green-300" 
-                      : "text-amber-800 dark:text-amber-300"}>
-                      Análisis de lectura completado
-                    </AlertTitle>
-                    <AlertDescription className={readingAccuracy > 70 
-                      ? "text-green-700 dark:text-green-400 text-sm" 
-                      : "text-amber-700 dark:text-amber-400 text-sm"}>
+                    <AlertTitle className="text-green-800 dark:text-green-300">¡Análisis de audio completado!</AlertTitle>
+                    <AlertDescription className="text-green-700 dark:text-green-400 text-sm">
                       <div className="mt-1">
-                        <p className="font-medium">Precisión de lectura: {readingAccuracy}%</p>
-                        {readingAccuracy > 70 
-                          ? <p className="text-xs mt-1">¡Excelente trabajo! Tu lectura es muy precisa.</p>
-                          : <p className="text-xs mt-1">Sigue practicando para mejorar tu precisión de lectura.</p>}
+                        <p className="font-medium">Tu tono de voz suena: <span className="font-bold">{emocionUsuario}</span></p>
                       </div>
-                      {transcribedText && (
-                        <div className="mt-3 p-2 bg-white/50 dark:bg-gray-800/50 rounded border border-current/10 text-xs">
-                          <p className="font-medium mb-1">Texto transcrito:</p>
-                          <p className="text-gray-600 dark:text-gray-300">{transcribedText}</p>
-                        </div>
-                      )}
                     </AlertDescription>
                   </div>
                 </Alert>
