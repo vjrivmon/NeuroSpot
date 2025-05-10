@@ -49,7 +49,7 @@ Este proyecto se enmarca en la práctica de la asignatura **Inteligencia Artific
 | Componente                  | Servicio AWS                      | Descripción                                                                 |
 |----------------------------|-----------------------------------|-----------------------------------------------------------------------------|
 | Frontend                   | S3 + CloudFront                   | Hosting del frontend Next.js estático con entrega global segura            |
-| Autenticación (futuro)     | Amazon Cognito                    | Gestión de usuarios y sesiones (previsto)                                  |
+| Autenticación              | Amazon Cognito                    | Gestión de usuarios y sesiones                                  |
 | Almacenamiento             | Amazon S3                         | Guarda audios, imágenes, fotogramas, resultados                            |
 | Lógica de negocio          | AWS Lambda                        | Orquestación sin servidor entre servicios                                  |
 | Base de datos              | Amazon DynamoDB                   | Almacenamiento estructurado de sesiones y métricas de juego                |
