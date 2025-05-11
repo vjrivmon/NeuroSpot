@@ -6,12 +6,12 @@ const {
   ScanCommand
 } = require("@aws-sdk/lib-dynamodb");
 
-// Credenciales AWS directamente en el script
+// Configuración de AWS usando variables de entorno
 const AWS_CONFIG = {
-  region: "eu-west-1",
+  region: process.env.AWS_REGION || "eu-west-1",
   credentials: {
-    accessKeyId: "AKIAXMT4TRKKHD4QUJG4",
-    secretAccessKey: "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"
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
   }
 };
 
