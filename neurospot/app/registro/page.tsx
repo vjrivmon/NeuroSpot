@@ -22,6 +22,7 @@ import { useForm } from "react-hook-form"
 import * as z from "zod"
 import { Info } from "lucide-react"
 import { useLocalAuth } from "../providers/auth-provider"
+import { userService, sessionService } from "@/lib/dynamo-service"
 
 // Esquema de validación con Zod
 const formSchema = z.object({
@@ -130,18 +131,34 @@ export default function RegistroPage() {
   }, [form]);
   
   // Función para manejar el envío del formulario
-  function onSubmit(data: FormValues) {
-    // En un caso real, aquí guardaríamos los datos en el localStorage o en una API
-    console.log("Datos del formulario:", data)
-    
-    // Guardar en localStorage para uso futuro
-    localStorage.setItem("datosParticipante", JSON.stringify(data))
-    
-    // Establecer el estado de inicio de sesión usando la autenticación local
-    localAuth.login(data.email);
-    
-    // Navegar a la página de consentimiento
-    router.push("/consentimiento")
+  async function onSubmit(data: FormValues) {
+    try {
+      // Guardar en localStorage para uso futuro (compatibilidad con código existente)
+      localStorage.setItem("datosParticipante", JSON.stringify(data));
+      
+      // Guardar usuario en DynamoDB
+      const result = await userService.createUser(data);
+      
+      if (!result.success) {
+        console.error("Error al guardar usuario en DynamoDB:", result.error);
+        // Continuar con la autenticación local aunque falle DynamoDB
+      }
+      
+      // Establecer el estado de inicio de sesión usando la autenticación local
+      localAuth.login(data.email);
+      
+      // Iniciar sesión en DynamoDB
+      // No bloqueamos la navegación con await para que sea más rápida la experiencia
+      sessionService.startSession(data.email);
+      
+      // Navegar a la página de consentimiento
+      router.push("/consentimiento");
+    } catch (error) {
+      console.error("Error en el proceso de registro:", error);
+      // Continuar con la autenticación local aunque falle DynamoDB
+      localAuth.login(data.email);
+      router.push("/consentimiento");
+    }
   }
 
   return (

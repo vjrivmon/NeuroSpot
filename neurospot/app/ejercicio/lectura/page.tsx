@@ -18,23 +18,29 @@ import {
 } from "@/components/ui/alert-dialog"
 import { PauseCircle, Mic, MicOff, ArrowRight, Check, Loader2 } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { useDynamo } from "@/hooks/use-dynamo"
 
 const textoLectura = `El sol brillaba en el cielo azul mientras los pájaros cantaban alegremente entre los árboles del parque. Un niño jugaba con su perro cerca del lago, lanzando una pelota que el animal perseguía con entusiasmo. Cerca de allí, algunas personas disfrutaban de un picnic sobre el césped verde, compartiendo risas y comida. El viento suave movía las hojas de los árboles creando una melodía relajante que invitaba a quedarse un rato más.`
 
 export default function LecturaPage() {
+  const [textoActual, setTextoActual] = useState<string>(textoLectura)
   const [recording, setRecording] = useState(false)
-  const [completed, setCompleted] = useState(false)
-  const [progress, setProgress] = useState(0)
   const [recordingTime, setRecordingTime] = useState(0)
-  const [showDialog, setShowDialog] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const [completed, setCompleted] = useState(false)
   const [recordingSaved, setRecordingSaved] = useState(false)
+  const [showDialog, setShowDialog] = useState(false)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [transcriptionStatus, setTranscriptionStatus] = useState<'idle' | 'processing' | 'completed'>('idle')
   const [transcriptionJobName, setTranscriptionJobName] = useState<string | null>(null)
   const [emocionUsuario, setEmocionUsuario] = useState<string | null>(null)
+  const [startTime, setStartTime] = useState<number>(0)
+  
+  const router = useRouter()
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
-  const router = useRouter()
+  const timerRef = useRef<NodeJS.Timeout | null>(null)
+  const dynamo = useDynamo()
 
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
@@ -90,6 +96,8 @@ export default function LecturaPage() {
   }, [transcriptionStatus, transcriptionJobName]);
 
   const startRecording = async () => {
+    setStartTime(Date.now());
+    
     try {
       // Reset states if starting a new recording
       setRecordingSaved(false);
@@ -199,7 +207,12 @@ export default function LecturaPage() {
     }
   };
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
+    // Calcular la duración del ejercicio
+    const endTime = Date.now();
+    const durationInMs = endTime - startTime;
+    const durationInSec = Math.floor(durationInMs / 1000);
+    
     // Guardar este ejercicio como completado en localStorage
     if (typeof window !== 'undefined') {
       try {
@@ -209,10 +222,58 @@ export default function LecturaPage() {
         if (!completedExercises.includes("lectura")) {
           completedExercises.push("lectura")
           localStorage.setItem("completedExercises", JSON.stringify(completedExercises))
+          console.log("Ejercicio de Lectura completado y guardado en localStorage")
         }
       } catch (e) {
         console.error("Error updating completedExercises:", e)
       }
+    }
+    
+    // Guardar los resultados en DynamoDB
+    try {
+      // Calcular puntuación basada en tiempo de grabación y emoción
+      // Si no hay emoción detectada, asignamos 70 puntos base
+      const puntuacionBase = 70;
+      let puntuacionEmocion = 0;
+      
+      // Ajuste por emoción detectada
+      if (emocionUsuario) {
+        // Bonificación para emociones neutras o calmadas, que son ideales para una lectura
+        if (emocionUsuario.toLowerCase().includes('calm') || 
+            emocionUsuario.toLowerCase().includes('neutral')) {
+          puntuacionEmocion = 30;
+        } else if (emocionUsuario.toLowerCase().includes('happy')) {
+          puntuacionEmocion = 20;
+        } else {
+          puntuacionEmocion = 10; // Otras emociones
+        }
+      }
+      
+      const puntuacionFinal = Math.min(100, puntuacionBase + puntuacionEmocion);
+      
+      // Datos del ejercicio a guardar
+      const exerciseData = {
+        tipo: "lectura",
+        puntuacion: puntuacionFinal,
+        duracion: durationInSec,
+        detalles: {
+          tiempoLectura: recordingTime,
+          emocionDetectada: emocionUsuario || "No detectada",
+          longitudTexto: textoActual.length,
+          tiempoTotal: durationInSec
+        }
+      }
+      
+      // Guardar en DynamoDB
+      const result = await dynamo.saveExerciseResult(exerciseData)
+      
+      if (!result.success) {
+        console.error("Error al guardar resultados en DynamoDB:", result.error)
+      } else {
+        console.log("Resultados de Lectura guardados correctamente en DynamoDB:", exerciseData)
+      }
+    } catch (error) {
+      console.error("Error al procesar resultados de lectura:", error)
     }
 
     router.push("/ejercicio/atencion");
@@ -259,7 +320,7 @@ export default function LecturaPage() {
               </div>
 
               <div className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
-                <p className="text-base leading-relaxed">{textoLectura}</p>
+                <p className="text-base leading-relaxed">{textoActual}</p>
               </div>
               
               {recordingSaved && (
