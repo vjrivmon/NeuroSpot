@@ -27,6 +27,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { PauseCircle, Video, Camera, ArrowRight, Download, Check, AlertCircle } from "lucide-react"
+import { useDynamo } from "@/hooks/use-dynamo"
 
 export default function VideoPage() {
   const [step, setStep] = useState<"instructions" | "recording" | "analyzing" | "completed">("instructions")
@@ -54,9 +55,11 @@ export default function VideoPage() {
   const timeTextRef = useRef<HTMLSpanElement>(null) // Referencia para actualizar el texto del tiempo directamente
   const progressBarRef = useRef<HTMLDivElement>(null) // Referencia para actualizar la barra de progreso directamente
   const router = useRouter()
+  const dynamo = useDynamo()
 
   // Variable para contar frames
   const frameCountRef = useRef(0);
+  const [startTime, setStartTime] = useState<number>(Date.now())
 
   // Subir fotograma a S3 y analizarlo con Rekognition
   const uploadFrameToS3 = async (dataUrl: string, frameId: number) => {
@@ -701,15 +704,107 @@ export default function VideoPage() {
     }, 2000);
   };
 
-  const completeExercise = () => {
-    router.push("/resultados");
+  const completeExercise = async () => {
+    // Calcular la duración del ejercicio
+    const endTime = Date.now();
+    const durationInMs = endTime - startTime;
+    const durationInSec = Math.floor(durationInMs / 1000);
+    
+    // Guardar este ejercicio como completado en localStorage
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem("completedExercises") 
+        const completedExercises = saved ? JSON.parse(saved) : []
+        
+        if (!completedExercises.includes("video")) {
+          completedExercises.push("video")
+          localStorage.setItem("completedExercises", JSON.stringify(completedExercises))
+          console.log("Ejercicio de Video completado y guardado en localStorage")
+        }
+      } catch (e) {
+        console.error("Error updating completedExercises:", e)
+      }
+    }
+    
+    // Guardar los resultados en DynamoDB
+    try {
+      // Calcular estadísticas de atención
+      const uploadStats = checkUploadStatus();
+      const attentionFrames = uploadedFrames.filter(f => f.hasFace === true);
+      const attentionPercentage = attentionFrames.length > 0 
+        ? Math.round((attentionFrames.length / uploadedFrames.length) * 100) 
+        : 0;
+        
+      // Procesar los detalles faciales para calcular puntuaciones de atención
+      const attentionScores = attentionFrames
+        .filter(frame => frame.faceDetails)
+        .map(frame => {
+          // Calcular puntuación con la función existente
+          const score = calculateAttentionScore(frame.faceDetails);
+          return {
+            frameId: frame.id,
+            score: score,
+            level: score >= 7 ? 'high' : (score >= 4 ? 'medium' : 'low')
+          };
+        });
+      
+      // Calcular la puntuación promedio de atención
+      const averageAttention = attentionScores.length > 0
+        ? attentionScores.reduce((sum, item) => sum + item.score, 0) / attentionScores.length
+        : 0;
+        
+      // Calcular porcentaje de frames con alta atención
+      const highAttentionFrames = attentionScores.filter(frame => frame.level === 'high');
+      const highAttentionPercentage = attentionScores.length > 0
+        ? Math.round((highAttentionFrames.length / attentionScores.length) * 100)
+        : 0;
+      
+      // Calcular una puntuación ponderada en escala 0-100
+      // 60% basado en el porcentaje de frames con alta atención
+      // 40% basado en la puntuación media normalizada (0-10 a 0-40)
+      const weightedScore = Math.round(
+        (highAttentionPercentage * 0.6) + (averageAttention * 4) 
+      );
+      
+      // Datos del ejercicio a guardar
+      const exerciseData = {
+        tipo: "video",
+        puntuacion: Math.min(100, weightedScore), // No exceder 100
+        duracion: durationInSec,
+        detalles: {
+          framesCapturados: uploadedFrames.length,
+          framesConRostro: attentionFrames.length,
+          porcentajeAtencion: attentionPercentage,
+          puntuacionMedia: averageAttention,
+          porcentajeAltaAtencion: highAttentionPercentage,
+          sessionId: sessionId,
+          tiempoTotal: durationInSec
+        }
+      }
+      
+      // Guardar en DynamoDB
+      const result = await dynamo.saveExerciseResult(exerciseData)
+      
+      if (!result.success) {
+        console.error("Error al guardar resultados en DynamoDB:", result.error)
+      } else {
+        console.log("Resultados de Video guardados correctamente en DynamoDB:", exerciseData)
+        
+        // Navegar a la página de resultados
+        router.push("/resultados");
+      }
+    } catch (error) {
+      console.error("Error al procesar resultados de video:", error)
+      router.push("/resultados");
+    }
   };
 
   // Función de reporte de PDF que ya no se usará pero se mantiene por compatibilidad
   const handleDownloadReport = () => {
-    // Redirigir a resultados en lugar de descargar PDF
+    // Aquí se manejaría la descarga del informe
+    // Por ahora simplemente redirigimos a resultados
     router.push("/resultados");
-  };
+  }
 
   // Verificar estado de subidas
   const checkUploadStatus = () => {
@@ -898,7 +993,10 @@ export default function VideoPage() {
     // Inicializar los estados (el temporizador real lo gestiona el script DOM)
     setTimeLeft(60);
     setProgress(0);
-
+    
+    // Registrar el tiempo de inicio para cálculos de duración
+    setStartTime(Date.now())
+    
     // Programar la primera captura con un pequeño retraso
     console.log("Programando captura de frames cada segundo");
     setTimeout(() => {

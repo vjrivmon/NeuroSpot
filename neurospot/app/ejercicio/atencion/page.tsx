@@ -16,8 +16,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { PauseCircle, AlertCircle, CheckCircle2, Clock } from "lucide-react"
+import { PauseCircle, AlertCircle, CheckCircle2, Clock, ArrowRight } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { useDynamo } from "@/hooks/use-dynamo"
 
 type ResultsType = {
   correctResponses: number;
@@ -66,6 +67,8 @@ export default function AtencionPage() {
   const transitionTimerRef = useRef<NodeJS.Timeout | null>(null)
   
   const router = useRouter()
+  const dynamo = useDynamo()
+  const [startTime, setStartTime] = useState<number>(0)
 
   // Definición de los niveles con la nueva duración solicitada
   const levels: LevelType[] = [
@@ -200,27 +203,27 @@ export default function AtencionPage() {
     
   }, [levels, startLetterTimer])
 
-  // Iniciar el juego completo
+  // Iniciar el juego
   const startGame = useCallback(() => {
-    console.log("Iniciando juego")
-    
-    // Limpiar cualquier timer anterior
-    clearAllTimers()
-    
-    // Resetear estados
     setGameStarted(true)
     setGamePaused(false)
     setGameFinished(false)
     setTimeLeft(TOTAL_TIME)
     setProgress(0)
     setCurrentLevel(0)
-    setShowLevelTransition(false)
     setResults({
       correctResponses: 0,
       commissionErrors: 0,
       omissionErrors: 0,
       reactionTimes: []
     })
+    setStartTime(Date.now())
+    
+    // Iniciar el timer principal
+    if (gameTimerRef.current) {
+      clearInterval(gameTimerRef.current)
+      gameTimerRef.current = null
+    }
     
     // Iniciar el primer nivel sin borrar el timer principal
     setCurrentLevel(0)
@@ -257,7 +260,7 @@ export default function AtencionPage() {
       });
     }, 1000);
     
-  }, [clearAllTimers, startLevel, TOTAL_TIME, startLetterTimer, currentLevel])
+  }, [clearAllTimers, startLevel, levels, TOTAL_TIME])
 
   // Pausar el juego
   const pauseGame = useCallback(() => {
@@ -341,36 +344,102 @@ export default function AtencionPage() {
     
   }, [gameStarted, gamePaused, gameFinished, currentLetter, targetLetter, stimulusStartTime, showLevelTransition])
 
-  // Completar la prueba
-  const completeTest = useCallback(() => {
-    console.log("Completando la prueba")
-    // Guardar resultados y marcar como completado
+  // Finalizar el juego
+  const finishGame = useCallback(async () => {
+    console.log("Finalizando juego")
+    clearAllTimers()
+    setGameFinished(true)
+    setCurrentLetter(null)
+    
+    // Guardar ejercicio como completado en localStorage
     if (typeof window !== 'undefined') {
       try {
-        // Guardar resultados para mostrarlos en la página de resultados
-        localStorage.setItem("atencionResults", JSON.stringify(results))
-        
-        // Marcar como completado
-        const saved = localStorage.getItem("completedExercises")
+        const saved = localStorage.getItem("completedExercises") 
         const completedExercises = saved ? JSON.parse(saved) : []
         
         if (!completedExercises.includes("atencion")) {
           completedExercises.push("atencion")
           localStorage.setItem("completedExercises", JSON.stringify(completedExercises))
+          console.log("Ejercicio de Atención completado y guardado en localStorage")
         }
       } catch (e) {
         console.error("Error updating completedExercises:", e)
       }
     }
-  }, [results])
-
-  // Control para finalizar la prueba
-  useEffect(() => {
-    if (gameFinished && !gamePaused) {
-      clearAllTimers()
-      completeTest()
+    
+    // Calcular estadísticas finales
+    const avgReactionTime = results.reactionTimes.length > 0 
+      ? results.reactionTimes.reduce((sum, time) => sum + time, 0) / results.reactionTimes.length 
+      : 0
+    
+    const medianReactionTime = results.reactionTimes.length > 0 
+      ? calculateMedian(results.reactionTimes) 
+      : 0
+    
+    // Guardar los resultados en DynamoDB
+    try {
+      // Calcular puntuación basada en los resultados
+      const totalTrials = results.correctResponses + results.omissionErrors + results.commissionErrors
+      const precision = totalTrials > 0 ? (results.correctResponses / totalTrials) * 100 : 0
+      
+      // Penalizar errores de comisión más que omisiones (la impulsividad es peor)
+      const comisionPenalty = results.commissionErrors * 1.5
+      const omisionPenalty = results.omissionErrors * 1
+      
+      // Calcular puntuación final (100 - penalizaciones, mínimo 0)
+      let puntuacionFinal = Math.max(0, Math.min(100, 100 - (comisionPenalty + omisionPenalty)))
+      
+      // Ajustar por tiempo de reacción (si es muy lento, reducir puntuación)
+      if (avgReactionTime > 1000) {
+        puntuacionFinal = Math.max(0, puntuacionFinal - 10) // Penalización por tiempo lento
+      }
+      
+      // Duración total del ejercicio en segundos
+      const endTime = Date.now()
+      const durationInSec = Math.floor((endTime - startTime) / 1000)
+      
+      // Datos del ejercicio a guardar
+      const exerciseData = {
+        tipo: "atencion",
+        puntuacion: Math.round(puntuacionFinal),
+        duracion: durationInSec,
+        detalles: {
+          correctas: results.correctResponses,
+          errorComision: results.commissionErrors,
+          errorOmision: results.omissionErrors,
+          tiempoReaccionMedio: Math.round(avgReactionTime),
+          tiempoReaccionMediana: Math.round(medianReactionTime),
+          nivelAlcanzado: currentLevel + 1,
+          tiempoTotal: durationInSec
+        }
+      }
+      
+      // Guardar en DynamoDB
+      const result = await dynamo.saveExerciseResult(exerciseData)
+      
+      if (!result.success) {
+        console.error("Error al guardar resultados en DynamoDB:", result.error)
+      } else {
+        console.log("Resultados de Atención guardados correctamente en DynamoDB:", exerciseData)
+      }
+    } catch (error) {
+      console.error("Error al procesar resultados de atención:", error)
     }
-  }, [gameFinished, gamePaused, clearAllTimers, completeTest])
+  }, [clearAllTimers, results, currentLevel, dynamo, startTime])
+
+  // Función auxiliar para calcular la mediana
+  const calculateMedian = (values: number[]): number => {
+    if (values.length === 0) return 0;
+    
+    const sorted = [...values].sort((a, b) => a - b);
+    const middle = Math.floor(sorted.length / 2);
+    
+    if (sorted.length % 2 === 0) {
+      return (sorted[middle - 1] + sorted[middle]) / 2;
+    }
+    
+    return sorted[middle];
+  };
 
   // Sistema de seguridad para evitar que se quede bloqueado en la transición
   useEffect(() => {
@@ -395,6 +464,16 @@ export default function AtencionPage() {
       clearAllTimers()
     }
   }, [clearAllTimers])
+
+  // Continuar con el siguiente ejercicio
+  const handleContinue = async () => {
+    // Si no se han guardado los resultados todavía, llamar a finishGame
+    if (!gameFinished) {
+      await finishGame();
+    }
+    
+    router.push("/ejercicio/memoria");
+  }
 
   return (
     <main className="min-h-screen flex flex-col">
@@ -487,7 +566,7 @@ export default function AtencionPage() {
                 </Alert>
                 <Button 
                   className="w-full h-12 text-white font-medium bg-[#3876F4] hover:bg-[#3876F4]/90"
-                  onClick={() => router.push("/ejercicio/memoria")}
+                  onClick={handleContinue}
                 >
                   Continuar al siguiente ejercicio
                 </Button>

@@ -31,69 +31,96 @@ export async function POST(request: Request) {
         base64Data = base64Data.split(',')[1];
       }
       
-      // Convertir base64 a buffer
-      const imageBuffer = Buffer.from(base64Data, 'base64');
-      
-      // Cliente de Rekognition (en Irlanda)
-      const rekognitionClient = new RekognitionClient({
-        region: AWS_REKOGNITION_REGION,
-        credentials: {
-          accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
-          secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
-        },
-      });
-
-      // Configurar comando para análisis directo del buffer de imagen
-      const params: DetectFacesCommandInput = {
-        Image: {
-          Bytes: imageBuffer
-        },
-        Attributes: ["ALL"] // Solicitar todos los atributos disponibles
-      };
-
-      console.log(`[API] analyzeImage - Enviando imagen en base64 a Rekognition (${Math.round(imageBuffer.length / 1024)} KB)`);
-      
-      const command = new DetectFacesCommand(params);
-      const response = await rekognitionClient.send(command);
-      
-      // Verificar si hay rostros detectados
-      const hasFace = response.FaceDetails && response.FaceDetails.length > 0;
-      const faceDetails = hasFace ? response.FaceDetails[0] : null;
-      
-      console.log(`[API] analyzeImage - Análisis de base64 completado - Rostros detectados: ${hasFace ? 'Sí' : 'No'}`);
-      
-      if (hasFace && faceDetails) {
-        console.log(`[API] analyzeImage - Rostro detectado con confianza: ${faceDetails.Confidence?.toFixed(2)}%`);
-        
-        // Log detallado para depuración (solo en desarrollo)
-        if (process.env.NODE_ENV !== 'production') {
-          // Mostrar detalles de pose
-          if (faceDetails.Pose) {
-            console.log(`[API] analyzeImage - POSE: Yaw=${faceDetails.Pose.Yaw?.toFixed(2)}° (horizontal), Pitch=${faceDetails.Pose.Pitch?.toFixed(2)}° (vertical), Roll=${faceDetails.Pose.Roll?.toFixed(2)}° (inclinación)`);
-          }
-          
-          // Estado de los ojos
-          console.log(`[API] analyzeImage - OJOS: Abiertos=${faceDetails.EyesOpen?.Value ? 'Sí' : 'No'} (confianza: ${faceDetails.EyesOpen?.Confidence?.toFixed(2)}%)`);
-          
-          // Emociones principales (top 3)
-          if (faceDetails.Emotions && faceDetails.Emotions.length > 0) {
-            const sortedEmotions = [...faceDetails.Emotions].sort((a, b) => (b.Confidence || 0) - (a.Confidence || 0));
-            const topEmotions = sortedEmotions.slice(0, 3).map(e => `${e.Type}=${e.Confidence?.toFixed(2)}%`).join(', ');
-            console.log(`[API] analyzeImage - EMOCIONES TOP: ${topEmotions}`);
-          }
-        }
+      // Asegurarnos de que tenemos datos válidos
+      if (!base64Data || base64Data.trim().length === 0) {
+        throw new Error("Datos base64 inválidos");
       }
       
-      // Devolver resultados del análisis
-      return NextResponse.json({
-        success: true,
-        hasFace,
-        faceDetails,
-        imageInfo: {
-          analysisMethod: "direct_base64",
-          rekognitionRegion: AWS_REKOGNITION_REGION
+      console.log(`[API] analyzeImage - Longitud de los datos base64: ${base64Data.length} caracteres`);
+      
+      // Convertir base64 a buffer
+      try {
+        const imageBuffer = Buffer.from(base64Data, 'base64');
+        
+        // Verificar que el buffer tiene contenido
+        if (imageBuffer.length === 0) {
+          throw new Error("Buffer de imagen vacío");
         }
-      });
+        
+        console.log(`[API] analyzeImage - Buffer de imagen creado: ${imageBuffer.length} bytes`);
+        
+        // Cliente de Rekognition (en Irlanda)
+        const rekognitionClient = new RekognitionClient({
+          region: AWS_REKOGNITION_REGION,
+          credentials: {
+            accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
+            secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
+          },
+        });
+
+        // Configurar comando para análisis directo del buffer de imagen
+        const params: DetectFacesCommandInput = {
+          Image: {
+            Bytes: imageBuffer
+          },
+          Attributes: ["ALL"] // Solicitar todos los atributos disponibles
+        };
+
+        console.log(`[API] analyzeImage - Enviando imagen en base64 a Rekognition (${Math.round(imageBuffer.length / 1024)} KB)`);
+        
+        const command = new DetectFacesCommand(params);
+        const response = await rekognitionClient.send(command);
+        
+        // Verificar si hay rostros detectados
+        const hasFace = response.FaceDetails && response.FaceDetails.length > 0;
+        const faceDetails = hasFace ? response.FaceDetails[0] : null;
+        
+        console.log(`[API] analyzeImage - Análisis de base64 completado - Rostros detectados: ${hasFace ? 'Sí' : 'No'}`);
+        
+        if (hasFace && faceDetails) {
+          console.log(`[API] analyzeImage - Rostro detectado con confianza: ${faceDetails.Confidence?.toFixed(2)}%`);
+          
+          // Log detallado para depuración (solo en desarrollo)
+          if (process.env.NODE_ENV !== 'production') {
+            // Mostrar detalles de pose
+            if (faceDetails.Pose) {
+              console.log(`[API] analyzeImage - POSE: Yaw=${faceDetails.Pose.Yaw?.toFixed(2)}° (horizontal), Pitch=${faceDetails.Pose.Pitch?.toFixed(2)}° (vertical), Roll=${faceDetails.Pose.Roll?.toFixed(2)}° (inclinación)`);
+            }
+            
+            // Estado de los ojos
+            console.log(`[API] analyzeImage - OJOS: Abiertos=${faceDetails.EyesOpen?.Value ? 'Sí' : 'No'} (confianza: ${faceDetails.EyesOpen?.Confidence?.toFixed(2)}%)`);
+            
+            // Emociones principales (top 3)
+            if (faceDetails.Emotions && faceDetails.Emotions.length > 0) {
+              const sortedEmotions = [...faceDetails.Emotions].sort((a, b) => (b.Confidence || 0) - (a.Confidence || 0));
+              const topEmotions = sortedEmotions.slice(0, 3).map(e => `${e.Type}=${e.Confidence?.toFixed(2)}%`).join(', ');
+              console.log(`[API] analyzeImage - EMOCIONES TOP: ${topEmotions}`);
+            }
+          }
+        }
+        
+        // Devolver resultados del análisis
+        return NextResponse.json({
+          success: true,
+          hasFace,
+          faceDetails,
+          imageInfo: {
+            analysisMethod: "direct_base64",
+            imageSize: imageBuffer.length,
+            rekognitionRegion: AWS_REKOGNITION_REGION
+          }
+        });
+      } catch (bufferError) {
+        console.error("[API] analyzeImage - Error procesando buffer:", bufferError);
+        return NextResponse.json(
+          { 
+            error: "Error procesando los datos de imagen",
+            details: bufferError instanceof Error ? bufferError.message : "Error desconocido",
+            phase: "buffer_processing" 
+          },
+          { status: 400 }
+        );
+      }
     }
     
     // Validación para método alternativo (obtención desde S3)

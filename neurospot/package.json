@@ -8,13 +8,21 @@
     "start": "next start",
     "lint": "next lint",
     "export": "next build && next export",
-    "deploy": "next build"
+    "deploy": "next build",
+    "test:dynamo": "node scripts/test-dynamodb.js",
+    "create:tables": "node scripts/create-tables.js"
   },
   "dependencies": {
-    "@aws-sdk/client-rekognition": "^3.803.0",
-    "@aws-sdk/client-s3": "^3.804.0",
-    "@aws-sdk/credential-providers": "^3.803.0",
-    "@aws-sdk/s3-request-presigner": "^3.804.0",
+    "@aws-sdk/client-comprehend": "^3.474.0",
+    "@aws-sdk/client-dynamodb": "^3.474.0",
+    "@aws-sdk/client-cognito-identity-provider": "^3.474.0",
+    "@aws-sdk/lib-dynamodb": "^3.474.0",
+    "@aws-sdk/client-rekognition": "^3.474.0",
+    "@aws-sdk/client-s3": "^3.474.0",
+    "@aws-sdk/client-transcribe": "^3.474.0",
+    "@aws-sdk/client-transcribe-streaming": "^3.474.0",
+    "@aws-sdk/credential-providers": "^3.474.0",
+    "@aws-sdk/s3-request-presigner": "^3.474.0",
     "@hookform/resolvers": "^3.9.1",
     "@radix-ui/react-accordion": "1.2.2",
     "@radix-ui/react-alert-dialog": "1.1.4",
@@ -47,7 +55,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "1.0.4",
-    "date-fns": "4.1.0",
+    "date-fns": "3.0.6",
     "embla-carousel-react": "8.5.1",
     "html2canvas": "^1.4.1",
     "input-otp": "1.4.1",
@@ -71,10 +79,12 @@
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "dotenv": "^16.4.0",
     "eslint": "^8.57.1",
     "eslint-config-next": "15.3.1",
     "postcss": "^8",
     "tailwindcss": "^3.4.17",
+    "ts-node": "^10.9.2",
     "typescript": "^5"
   }
 }

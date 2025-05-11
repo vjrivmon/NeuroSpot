@@ -18,16 +18,20 @@ import {
 } from "@/components/ui/alert-dialog"
 import { PauseCircle, Check } from "lucide-react"
 import { useLocalAuth } from "../../providers/auth-provider"
+import { useDynamo } from "@/hooks/use-dynamo"
 
 const colors = [
-  { name: "Rojo", value: "#ef4444" },
-  { name: "Azul", value: "#3b82f6" },
-  { name: "Verde", value: "#22c55e" },
-  { name: "Amarillo", value: "#eab308" },
+  { name: "Rojo", value: "#EF4444" },
+  { name: "Verde", value: "#10B981" },
+  { name: "Azul", value: "#3B82F6" },
+  { name: "Amarillo", value: "#F59E0B" },
 ]
 
 export default function StroopTestPage() {
-  const [currentWord, setCurrentWord] = useState({ text: "", color: "" })
+  const [currentWord, setCurrentWord] = useState({
+    text: colors[0].name,
+    color: colors[0].value,
+  })
   const [progress, setProgress] = useState(0)
   const [timeLeft, setTimeLeft] = useState(60)
   const [score, setScore] = useState(0)
@@ -35,10 +39,13 @@ export default function StroopTestPage() {
   const [showDialog, setShowDialog] = useState(false)
   const [testCompleted, setTestCompleted] = useState(false)
   const [gameStarted, setGameStarted] = useState(true)
+  const [startTime, setStartTime] = useState(Date.now())
   const router = useRouter()
+  const dynamoDB = useDynamo()
 
   useEffect(() => {
     if (gameStarted) {
+      setStartTime(Date.now())
       generateNewWord()
 
       const timer = setInterval(() => {
@@ -83,10 +90,14 @@ export default function StroopTestPage() {
     generateNewWord()
   }
 
-  const completeTest = () => {
+  const completeTest = async () => {
     setTestCompleted(true)
     
-    // Guardar este ejercicio como completado en localStorage
+    // Calcular la duración del ejercicio
+    const duracionMs = Date.now() - startTime
+    const duracionSeg = Math.round(duracionMs / 1000)
+    
+    // Guardar este ejercicio como completado en localStorage (compatibilidad)
     if (typeof window !== 'undefined') {
       try {
         const saved = localStorage.getItem("completedExercises") 
@@ -100,6 +111,34 @@ export default function StroopTestPage() {
       } catch (e) {
         console.error("Error updating completedExercises:", e)
       }
+    }
+    
+    // Guardar los resultados en DynamoDB
+    try {
+      const porcentajeAciertos = total > 0 ? Math.round((score / total) * 100) : 0
+      
+      // Datos del ejercicio a guardar
+      const exerciseData = {
+        tipo: "stroop",
+        puntuacion: score,
+        duracion: duracionSeg,
+        detalles: {
+          total: total,
+          porcentajeAciertos: porcentajeAciertos,
+          tiempoTotal: duracionSeg
+        }
+      }
+      
+      // Guardar en DynamoDB
+      const result = await dynamoDB.saveExerciseResult(exerciseData)
+      
+      if (!result.success) {
+        console.error("Error al guardar resultados en DynamoDB:", result.error)
+      } else {
+        console.log("Resultados guardados correctamente en DynamoDB")
+      }
+    } catch (error) {
+      console.error("Error al procesar resultados:", error)
     }
   }
 

@@ -19,6 +19,7 @@ import {
 import { PauseCircle, ArrowRight } from "lucide-react"
 import Image from "next/image"
 import { useMediaQuery } from "@/hooks/use-media-query"
+import { useDynamo } from "@/hooks/use-dynamo"
 
 // Definición de tipos para las preguntas
 type Question = {
@@ -81,6 +82,8 @@ export default function ObservacionPage() {
   const [showDialog, setShowDialog] = useState(false)
   const [completed, setCompleted] = useState(false)
   const router = useRouter()
+  const [startTime, setStartTime] = useState<number>(Date.now())
+  const dynamo = useDynamo()
 
   // Temporizador para cada pregunta
   useEffect(() => {
@@ -135,16 +138,21 @@ export default function ObservacionPage() {
   }
 
   // Completar el ejercicio y pasar a resultados
-  const completeExercise = () => {
+  const completeExercise = async () => {
+    const endTime = Date.now();
+    const durationInMs = endTime - startTime;
+    const durationInSec = Math.floor(durationInMs / 1000);
+    
     // Guardar este ejercicio como completado en localStorage
     if (typeof window !== 'undefined') {
       try {
         const saved = localStorage.getItem("completedExercises") 
-        let completedExercises = saved ? JSON.parse(saved) : []
+        const completedExercises = saved ? JSON.parse(saved) : []
         
         if (!completedExercises.includes("observacion")) {
           completedExercises.push("observacion")
           localStorage.setItem("completedExercises", JSON.stringify(completedExercises))
+          console.log("Ejercicio de Observación completado y guardado en localStorage")
         }
         
         // Guardar el resultado del ejercicio en testResultsData
@@ -180,6 +188,7 @@ export default function ObservacionPage() {
           
           // Guardar los resultados actualizados
           localStorage.setItem("testResultsData", JSON.stringify(resultsData));
+          console.log("Resultados guardados en localStorage", observacionResult);
         } catch (e) {
           console.error("Error updating testResultsData:", e);
         }
@@ -188,7 +197,40 @@ export default function ObservacionPage() {
       }
     }
     
-    router.push("/ejercicio/video")
+    // Guardar los resultados en DynamoDB
+    try {
+      // Calcular porcentaje de aciertos
+      const aciertosPercent = (score / questions.length) * 100;
+      
+      // Mapear ese porcentaje a una puntuación de 0-100
+      const puntuacionFinal = Math.round(aciertosPercent);
+      
+      // Datos del ejercicio a guardar
+      const exerciseData = {
+        tipo: "observacion",
+        puntuacion: puntuacionFinal,
+        duracion: durationInSec,
+        detalles: {
+          totalPreguntas: questions.length,
+          aciertos: score,
+          porcentajeAciertos: Math.round(aciertosPercent),
+          tiempoTotal: durationInSec
+        }
+      }
+      
+      // Guardar en DynamoDB
+      const result = await dynamo.saveExerciseResult(exerciseData)
+      
+      if (!result.success) {
+        console.error("Error al guardar resultados en DynamoDB:", result.error)
+      } else {
+        console.log("Resultados de Observación guardados correctamente en DynamoDB:", exerciseData)
+      }
+    } catch (error) {
+      console.error("Error al procesar resultados de observación:", error)
+    }
+    
+    router.push("/ejercicio/video");
   }
 
   return (

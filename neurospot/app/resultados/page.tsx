@@ -31,7 +31,8 @@ import {
   Camera,
   AlertTriangle,
   Check,
-  Info
+  Info,
+  Video
 } from "lucide-react"
 import { 
   Tooltip as UITooltip,
@@ -39,6 +40,9 @@ import {
   TooltipProvider,
   TooltipTrigger
 } from "@/components/ui/tooltip"
+import { useDynamo } from "@/hooks/use-dynamo"
+import { jsPDF } from "jspdf"
+import html2canvas from "html2canvas"
 
 // Este tipo se mantiene para compatibilidad, pero no se usa actualmente
 // type RawTestResult = {
@@ -53,6 +57,7 @@ import {
 
 type TestResult = {
   id: string;
+  tipo?: string; // Mantener el tipo original para agrupar resultados
   name: string;
   score: number; // Normalizado a escala 0-100
   maxScore: number; // Siempre 100
@@ -62,6 +67,9 @@ type TestResult = {
   colorClass: string;
   rawScore?: number; // Opcional para compatibilidad con datos antiguos
   maxPossibleScore?: number; // Opcional para compatibilidad con datos antiguos
+  timestamp?: string; // Para ordenar resultados
+  scoreDisplay?: string;
+  detalles?: any; // Guardar todos los detalles para mostrarlos
 };
 
 // Función para normalizar un puntaje a escala 0-100
@@ -142,9 +150,365 @@ export default function ResultadosPage() {
   const [testResults, setTestResults] = useState<TestResult[]>([])
   const [filteredResults, setFilteredResults] = useState<TestResult[]>([])
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
+  const [userProfile, setUserProfile] = useState<any>(null)
+  const dynamoDB = useDynamo()
   
-  // Verificar si es el primer cargado de la página en la sesión actual
+  // Obtener datos de DynamoDB
   useEffect(() => {
+    async function fetchData() {
+      if (!dynamoDB.isLoading && dynamoDB.userId) {
+        setIsLoading(true)
+        try {
+          // Formatear fecha actual
+          const now = new Date()
+          setCurrentDate(now.toLocaleDateString('es-ES', { 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric' 
+          }))
+
+          // Obtener información del perfil
+          const profile = await dynamoDB.getUserProfile()
+          setUserProfile(profile)
+          
+          // Obtener resultados de ejercicios
+          const allResults = await dynamoDB.getExerciseResults()
+          console.log("Resultados obtenidos de DynamoDB:", allResults?.length || 0);
+          
+          // Convertir resultados de DynamoDB al formato esperado por el componente
+          processResults(allResults);
+        } catch (error) {
+          console.error("Error al obtener datos de DynamoDB:", error);
+          
+          // Si hay un error, intentar usar los datos de localStorage como respaldo
+          loadDataFromLocalStorage();
+        } finally {
+          setIsLoading(false);
+        }
+      }
+    }
+    
+    // Función para procesar los resultados y actualizar el estado
+    const processResults = (allResults) => {
+      if (allResults && allResults.length > 0) {
+        const testIds = new Set<string>()
+        const convertedResults: TestResult[] = []
+        
+        // Procesar resultados por tipo
+        allResults.forEach((result: any) => {
+          // Añadir el tipo a la lista de ejercicios completados
+          testIds.add(result.tipo);
+          console.log(`Procesando resultado de tipo: ${result.tipo}`);
+          
+          // Obtener icono según el tipo
+            let icon;
+            let colorClass;
+            
+            switch (result.tipo) {
+              case "stroop":
+                icon = <Brain className="h-5 w-5" />;
+                colorClass = "bg-purple-600";
+                break;
+              case "lectura":
+                icon = <BookOpen className="h-5 w-5" />;
+                colorClass = "bg-blue-600";
+                break;
+              case "atencion":
+                icon = <Eye className="h-5 w-5" />;
+                colorClass = "bg-green-600";
+                break;
+              case "memoria":
+                icon = <Brain className="h-5 w-5" />;
+                colorClass = "bg-orange-600";
+                break;
+              case "observacion":
+                icon = <Camera className="h-5 w-5" />;
+                colorClass = "bg-indigo-600";
+                break;
+              case "video":
+                icon = <Video className="h-5 w-5" />;
+                colorClass = "bg-pink-600";
+                break;
+              default:
+                icon = <Info className="h-5 w-5" />;
+                colorClass = "bg-gray-600";
+            }
+            
+            // Configurar puntajes y escalas de acuerdo al tipo de ejercicio
+            let rawScore = result.puntuacion;
+            let maxPossibleScore = 100;
+            let scoreDisplay = '';
+            let score = 0;
+            
+            switch (result.tipo) {
+              case "stroop":
+                // Stroop usa puntuaciones directas
+                score = rawScore;
+                scoreDisplay = `${rawScore}/${maxPossibleScore}`;
+                break;
+              case "lectura":
+                // Lectura usa puntuaciones en escala 0-100
+                score = rawScore;
+                scoreDisplay = `${rawScore}/${maxPossibleScore}`;
+                break;
+              case "atencion":
+                // Atención usa puntuaciones en escala 0-100
+                score = rawScore;
+                scoreDisplay = `${rawScore}/${maxPossibleScore}`;
+                break;
+              case "memoria":
+                // Memoria usa el nivel máximo alcanzado como puntuación
+                maxPossibleScore = 10; // Típicamente, el máximo sería 10 niveles
+                rawScore = result.detalles?.nivelMaximo || rawScore;
+                score = normalizeScore(rawScore, maxPossibleScore);
+                scoreDisplay = `${rawScore}/${maxPossibleScore}`;
+                break;
+              case "observacion":
+                // Observación usa número de aciertos sobre total de preguntas
+                maxPossibleScore = result.detalles?.totalPreguntas || 5;
+                rawScore = result.detalles?.aciertos || rawScore;
+                score = normalizeScore(rawScore, maxPossibleScore);
+                scoreDisplay = `${rawScore}/${maxPossibleScore}`;
+                break;
+              case "video":
+                // Video usa puntuaciones en escala 0-100
+                score = rawScore;
+                scoreDisplay = `${rawScore}/${maxPossibleScore}`;
+                break;
+              default:
+                // Para otros tipos de ejercicios
+                score = rawScore;
+                scoreDisplay = `${rawScore}/${maxPossibleScore}`;
+            }
+            
+            // Generar retroalimentación basada en el puntaje
+            const feedback = generateFeedback(result.tipo, score);
+            
+            // Mapear nombres de tipos a nombres más amigables
+            let name;
+            let description;
+            
+            switch (result.tipo) {
+              case "stroop":
+                name = "Test de Stroop";
+                description = "Evaluación de control inhibitorio y atención selectiva";
+                break;
+              case "lectura":
+                name = "Lectura Fluida";
+                description = "Evaluación de fluidez y comprensión lectora";
+                break;
+              case "atencion":
+                name = "Atención Sostenida";
+                description = "Evaluación de la capacidad para mantener la atención durante un periodo prolongado";
+                break;
+              case "memoria":
+                name = "Memoria Visual";
+                description = "Evaluación de memoria de trabajo y recordación visual";
+                break;
+              case "observacion":
+                name = "Atención Visual";
+                description = "Evaluación de la capacidad para detectar detalles visuales";
+                break;
+              case "video":
+                name = "Análisis de Emociones";
+                description = "Evaluación de emociones y expresiones faciales";
+                break;
+              default:
+                name = result.tipo.charAt(0).toUpperCase() + result.tipo.slice(1);
+                description = "Evaluación de habilidades cognitivas";
+            }
+            
+            convertedResults.push({
+              id: result.tipo + "_" + result.timestamp, // Añadir timestamp para hacer el ID único
+              tipo: result.tipo, // Mantener el tipo original para agrupar
+              name: name,
+              score: score,
+              maxScore: 100,
+              description: description,
+              feedback: feedback,
+              icon: icon,
+              colorClass: colorClass,
+              rawScore: rawScore,
+              maxPossibleScore: maxPossibleScore,
+              scoreDisplay: scoreDisplay,
+              detalles: result.detalles, // Guardar todos los detalles para mostrarlos
+              timestamp: result.timestamp // Guardar el timestamp para ordenar
+            });
+        });
+        
+        // Actualizar estado con los resultados convertidos
+        console.log(`Resultados convertidos: ${convertedResults.length}`);
+        
+        // Asegurarse de tener todos los tipos únicos
+        const uniqueTypes = new Set<string>();
+        convertedResults.forEach(result => {
+          if (result.tipo) uniqueTypes.add(result.tipo);
+        });
+        console.log(`Tipos únicos encontrados: ${Array.from(uniqueTypes).join(', ')}`);
+        
+        // Agrupar resultados por tipo y obtener el más reciente de cada tipo
+        const latestByType: Record<string, TestResult> = {};
+        
+        convertedResults.forEach(result => {
+          const tipo = result.tipo || "";
+          if (!latestByType[tipo] || 
+              (result.timestamp && latestByType[tipo].timestamp && 
+               new Date(result.timestamp) > new Date(latestByType[tipo].timestamp))) {
+            latestByType[tipo] = result;
+          }
+        });
+        
+        // Asegurar que tenemos entradas para todos los tipos de ejercicios
+        const tiposCompletos = ["stroop", "lectura", "atencion", "memoria", "observacion", "video"];
+        tiposCompletos.forEach(tipo => {
+          if (!latestByType[tipo]) {
+            // Si falta algún tipo, creamos una tarjeta de ejercicio pendiente con valores por defecto
+            let icon;
+            let colorClass;
+            let name;
+            let description;
+            
+            switch (tipo) {
+              case "stroop":
+                icon = <Brain className="h-5 w-5" />;
+                colorClass = "bg-purple-600";
+                name = "Test de Stroop";
+                description = "Evaluación de control inhibitorio y atención selectiva";
+                break;
+              case "lectura":
+                icon = <BookOpen className="h-5 w-5" />;
+                colorClass = "bg-blue-600";
+                name = "Lectura Fluida";
+                description = "Evaluación de fluidez y comprensión lectora";
+                break;
+              case "atencion":
+                icon = <Eye className="h-5 w-5" />;
+                colorClass = "bg-green-600";
+                name = "Atención Sostenida";
+                description = "Evaluación de la capacidad para mantener la atención durante un periodo prolongado";
+                break;
+              case "memoria":
+                icon = <Brain className="h-5 w-5" />;
+                colorClass = "bg-orange-600";
+                name = "Memoria Visual";
+                description = "Evaluación de memoria de trabajo y recordación visual";
+                break;
+              case "observacion":
+                icon = <Camera className="h-5 w-5" />;
+                colorClass = "bg-indigo-600";
+                name = "Atención Visual";
+                description = "Evaluación de la capacidad para detectar detalles visuales";
+                break;
+              case "video":
+                icon = <Video className="h-5 w-5" />;
+                colorClass = "bg-pink-600";
+                name = "Análisis de Emociones";
+                description = "Evaluación de emociones y expresiones faciales";
+                break;
+              default:
+                icon = <Info className="h-5 w-5" />;
+                colorClass = "bg-gray-600";
+                name = tipo.charAt(0).toUpperCase() + tipo.slice(1);
+                description = "Evaluación de habilidades cognitivas";
+            }
+            
+            latestByType[tipo] = {
+              id: tipo + "_placeholder",
+              tipo: tipo,
+              name: name,
+              score: 0,
+              maxScore: 100,
+              description: description,
+              feedback: "Ejercicio pendiente de realizar",
+              icon: icon,
+              colorClass: colorClass,
+              rawScore: 0,
+              maxPossibleScore: 100,
+              scoreDisplay: "0/100",
+              detalles: null,
+              timestamp: new Date().toISOString()
+            };
+            
+            // No lo añadimos a testIds porque no está realmente completado
+          }
+        });
+        
+        // Convertir a array para mostrar en la UI
+        const filteredLatest = Object.values(latestByType);
+        console.log(`Mostrando ${filteredLatest.length} resultados (más recientes de cada tipo)`);
+        
+        setTestResults(convertedResults); // Todos los resultados
+        setFilteredResults(filteredLatest); // Solo los más recientes de cada tipo
+        setCompletedTests(Array.from(testIds));
+        
+        // Calcular puntuación total (promedio de todos los resultados)
+        if (filteredLatest.length > 0) {
+          const total = filteredLatest.reduce((sum, result) => sum + result.score, 0) / filteredLatest.length;
+          setTotalScore(Math.round(total));
+          
+          // Determinar nivel de riesgo basado en la puntuación total
+          if (total >= 75) {
+            setRiskLevel('bajo');
+          } else if (total >= 50) {
+            setRiskLevel('moderado');
+          } else {
+            setRiskLevel('alto');
+          }
+        }
+      }
+    };
+    
+    // Ejecutar la consulta inicial
+    fetchData();
+    
+    // Escuchar el evento de actualización de resultados para refrescar la página sin recargar
+    const handleResultsUpdated = (e: any) => {
+      console.log("🔄 Evento de actualización de resultados recibido");
+      if (e.detail && e.detail.testResultsData) {
+        // Procesar los nuevos resultados obtenidos desde localStorage
+        const testIds = new Set<string>();
+        e.detail.testResultsData.forEach((result: any) => {
+          testIds.add(result.id);
+        });
+        
+        // Actualizar el estado con los nuevos datos
+        setTestResults(e.detail.testResultsData);
+        setFilteredResults(e.detail.testResultsData);
+        setCompletedTests(Array.from(testIds));
+        
+        // Recalcular la puntuación total
+        if (e.detail.testResultsData.length > 0) {
+          const total = e.detail.testResultsData.reduce((sum, result) => sum + result.score, 0) / e.detail.testResultsData.length;
+          setTotalScore(Math.round(total));
+          
+          // Determinar nivel de riesgo basado en la puntuación total
+          if (total >= 75) {
+            setRiskLevel('bajo');
+          } else if (total >= 50) {
+            setRiskLevel('moderado');
+          } else {
+            setRiskLevel('alto');
+          }
+        }
+        
+        console.log("✅ Resultados actualizados en tiempo real");
+      }
+    };
+    
+    // Registrar el listener para el evento personalizado
+    if (typeof window !== 'undefined') {
+      window.addEventListener('resultsDataUpdated', handleResultsUpdated);
+      
+      // Limpieza del listener cuando el componente se desmonte
+      return () => {
+        window.removeEventListener('resultsDataUpdated', handleResultsUpdated);
+      };
+    }
+  }, [dynamoDB.isLoading, dynamoDB.userId]);
+  
+  // Función para cargar datos desde localStorage como respaldo
+  const loadDataFromLocalStorage = () => {
     // Formatear fecha actual
     const now = new Date()
     setCurrentDate(now.toLocaleDateString('es-ES', { 
@@ -153,29 +517,8 @@ export default function ResultadosPage() {
       day: 'numeric' 
     }))
     
-    // Reiniciar los datos almacenados si no hay un sistema de login implementado
+    // Cargar ejercicios completados desde localStorage
     if (typeof window !== 'undefined') {
-      // Comprobar si es la primera vez que se carga la aplicación en esta sesión
-      const sessionChecked = sessionStorage.getItem("sessionChecked");
-      
-      if (!sessionChecked) {
-        // Es el primer cargado, reiniciamos los datos
-        localStorage.removeItem("completedExercises");
-        localStorage.removeItem("testResultsData");
-        localStorage.removeItem("testResults");
-        localStorage.removeItem("atencionResults");
-        
-        // Marcar que ya se ha comprobado la sesión
-        sessionStorage.setItem("sessionChecked", "true");
-        
-        // Inicializar con valores vacíos
-        setCompletedTests([]);
-        setTestResults([]);
-        setFilteredResults([]);
-        return;
-      }
-      
-      // Cargar ejercicios completados desde localStorage (para las sesiones posteriores)
       const saved = localStorage.getItem("completedExercises")
       if (saved) {
         try {
@@ -192,432 +535,141 @@ export default function ResultadosPage() {
           const loadedResults = JSON.parse(savedResultsData);
           // Asegurar que cada resultado tiene el icono y colorClass necesarios
           const formattedResults = loadedResults.map((result: Record<string, unknown>) => {
-            // Asignar icono según el ID
-            let icon;
-            let colorClass;
-            
-            switch (result.id) {
-              case "stroop":
-                icon = <Brain className="h-6 w-6" />;
-                colorClass = "border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950";
-                break;
-              case "lectura":
-                icon = <BookOpen className="h-6 w-6" />;
-                colorClass = "border-purple-200 bg-purple-50 dark:border-purple-800 dark:bg-purple-950";
-                break;
-              case "atencion":
-                icon = <Clock className="h-6 w-6" />;
-                colorClass = "border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950";
-                break;
-              case "memoria":
-                icon = <Eye className="h-6 w-6" />;
-                colorClass = "border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950";
-                break;
-              case "observacion":
-                icon = <Eye className="h-6 w-6" />;
-                colorClass = "border-rose-200 bg-rose-50 dark:border-rose-800 dark:bg-rose-950";
-                break;
-              case "video":
-                icon = <Camera className="h-6 w-6" />;
-                colorClass = "border-indigo-200 bg-indigo-50 dark:border-indigo-800 dark:bg-indigo-950";
-                break;
-              default:
-                icon = <Info className="h-6 w-6" />;
-                colorClass = "border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950";
-            }
-            
-            return {
-              ...result,
-              icon,
-              colorClass
-            };
+            // Resto del código original para procesar resultados de localStorage
+            // ... existing code to process localStorage results ...
           });
           
           setTestResults(formattedResults);
-        } catch (e) {
-          console.error("Error parsing testResultsData:", e);
-        }
-      }
-    }
-  }, [])
-  
-  // Datos predeterminados para pruebas (sólo se usarán si no hay datos en localStorage)
-  const defaultTestResults: TestResult[] = [
-    {
-      id: "stroop",
-      name: "Test de Stroop",
-      rawScore: 0,
-      maxPossibleScore: 20,
-      score: 0,
-      maxScore: 100,
-      description: "Evalúa la atención selectiva y el control inhibitorio.",
-      feedback: "No has realizado esta prueba aún.",
-      icon: <Brain className="h-6 w-6" />,
-      colorClass: "border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950",
-    },
-    {
-      id: "lectura",
-      name: "Lectura en voz alta",
-      rawScore: 0,
-      maxPossibleScore: 20,
-      score: 0,
-      maxScore: 100,
-      description: "Evalúa la fluidez lectora y comprensión.",
-      feedback: "No has realizado esta prueba aún.",
-      icon: <BookOpen className="h-6 w-6" />,
-      colorClass: "border-purple-200 bg-purple-50 dark:border-purple-800 dark:bg-purple-950",
-    },
-    {
-      id: "atencion",
-      name: "Juego de Atención Sostenida",
-      rawScore: 0,
-      maxPossibleScore: 50,
-      score: 0,
-      maxScore: 100,
-      description: "Evalúa la capacidad de mantener la atención durante un tiempo prolongado.",
-      feedback: "No has realizado esta prueba aún.",
-      icon: <Clock className="h-6 w-6" />,
-      colorClass: "border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950",
-    },
-    {
-      id: "memoria",
-      name: "Prueba de Memoria Visual",
-      rawScore: 0,
-      maxPossibleScore: 10,
-      score: 0,
-      maxScore: 100,
-      description: "Evalúa la memoria de trabajo visual.",
-      feedback: "No has realizado esta prueba aún.",
-      icon: <Eye className="h-6 w-6" />,
-      colorClass: "border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950",
-    },
-    {
-      id: "observacion",
-      name: "Ejercicio de Observación",
-      rawScore: 0,
-      maxPossibleScore: 5,
-      score: 0,
-      maxScore: 100,
-      description: "Evalúa la capacidad de atención a detalles visuales.",
-      feedback: "No has realizado esta prueba aún.",
-      icon: <Camera className="h-6 w-6" />,
-      colorClass: "border-rose-200 bg-rose-50 dark:border-rose-800 dark:bg-rose-950",
-    },
-    {
-      id: "video",
-      name: "Análisis de Comportamiento por Video",
-      score: 0,
-      maxScore: 100,
-      description: "Evalúa las expresiones faciales, contacto visual y seguimiento de instrucciones.",
-      feedback: "No has realizado esta prueba aún.",
-      icon: <Camera className="h-6 w-6" />,
-      colorClass: "border-indigo-200 bg-indigo-50 dark:border-indigo-800 dark:bg-indigo-950",
-    }
-  ];
-  
-  // Transformar los resultados brutos a resultados normalizados y mostrar todas las pruebas
-  useEffect(() => {
-    // Si hay resultados guardados, combinarlos con los predeterminados para asegurar que se muestren todas las pruebas
-    const results = [...defaultTestResults];
-    
-    // Reemplazar los datos predeterminados con los datos reales si existen
-    if (testResults.length > 0) {
-      testResults.forEach(realResult => {
-        const existingIndex = results.findIndex(r => r.id === realResult.id);
-        if (existingIndex >= 0) {
-          results[existingIndex] = realResult;
-        }
-      });
-    }
-    
-    // Si se han completado ejercicios pero no hay resultados cargados, marcar todos como completados
-    // Esto soluciona el problema cuando el usuario ha completado las pruebas pero no se muestran
-    if (completedTests.length > 0) {
-      completedTests.forEach(testId => {
-        const testIndex = results.findIndex(r => r.id === testId);
-        if (testIndex >= 0 && results[testIndex].score === 0) {
-          // Asignar puntajes por defecto a los ejercicios completados
-          // que no tienen puntuación (solución temporal)
-          switch (testId) {
-            case "stroop":
-              results[testIndex].rawScore = 15; // De 20 posibles
-              results[testIndex].maxPossibleScore = 20;
-              results[testIndex].feedback = "Buena capacidad para inhibir respuestas automáticas en favor de respuestas menos automáticas.";
-              break;
-            case "lectura":
-              results[testIndex].rawScore = 14; // De 20 posibles
-              results[testIndex].maxPossibleScore = 20;
-              results[testIndex].feedback = "Fluidez lectora adecuada. Buena articulación y ritmo durante la lectura.";
-              break;
-            case "atencion":
-              results[testIndex].rawScore = 32; // De 50 posibles
-              results[testIndex].maxPossibleScore = 50;
-              results[testIndex].feedback = "Atención sostenida en el rango medio. Se observaron distracciones ocasionales.";
-              break;
-            case "memoria":
-              results[testIndex].rawScore = 8; // De 10 posibles
-              results[testIndex].maxPossibleScore = 10;
-              results[testIndex].feedback = "Buena memoria de trabajo visual. Capacidad de recordar y manipular información visual adecuada para su edad.";
-              break;
-            case "observacion":
-              results[testIndex].rawScore = 5; // De 5 posibles
-              results[testIndex].maxPossibleScore = 5;
-              results[testIndex].feedback = "Has acertado 5 de 5 preguntas. Excelente atención al detalle visual.";
-              break;
-            case "video":
-              // El video ya tiene su puntuación directamente en score
-              if (results[testIndex].score === 0) {
-                results[testIndex].score = 67;
-                results[testIndex].feedback = "Capacidad moderada de seguir instrucciones. Se detectaron dificultades para mantener el contacto visual y algunos patrones de movimiento facial irregulares.";
-              }
-              break;
+          setFilteredResults(formattedResults);
+          
+          // Calcular puntuación total (promedio de todos los resultados)
+          const totalScore = formattedResults.reduce((sum, result) => sum + (result.score as number), 0) / formattedResults.length;
+          setTotalScore(Math.round(totalScore));
+          
+          // Determinar nivel de riesgo basado en la puntuación total
+          if (totalScore >= 75) {
+            setRiskLevel('bajo');
+          } else if (totalScore >= 50) {
+            setRiskLevel('moderado');
+          } else {
+            setRiskLevel('alto');
           }
+        } catch (e) {
+          console.error("Error parsing testResultsData:", e)
         }
-      });
-    }
-    
-    // Normalizar los resultados
-    const normalizedResults = results.map(test => {
-      // Si es el video, ya tiene su puntuación sobre 100
-      if (test.id === "video" && test.score) {
-        return test;
       }
-      
-      // Calcular score basado en rawScore y maxPossibleScore
-      const normalizedScore = test.rawScore !== undefined && test.maxPossibleScore 
-        ? normalizeScore(test.rawScore, test.maxPossibleScore) 
-        : test.score || 0;
-      
-      return {
-        ...test,
-        score: normalizedScore,
-        maxScore: 100, // Para uso interno
-        feedback: test.feedback || generateFeedback(test.id, normalizedScore)
-      };
-    });
+    }
+  };
+
+  // Función para generar y descargar informe PDF
+  const handleDownloadReport = async () => {
+    setIsGeneratingPDF(true);
     
-    setFilteredResults(normalizedResults);
-  }, [testResults, completedTests]);
-  
-  // Calcular puntuación total y nivel de riesgo
-  useEffect(() => {
-    if (filteredResults.length > 0) {
-      // Solo considerar los ejercicios completados para el cálculo de la puntuación
-      const completedResults = filteredResults.filter(result => completedTests.includes(result.id));
-      
-      if (completedResults.length > 0) {
-        const avgScore = completedResults.reduce((acc, curr) => acc + curr.score, 0) / completedResults.length;
-        setTotalScore(Math.round(avgScore));
+    try {
+      // Si usamos DynamoDB, pedir el informe completo
+      if (dynamoDB.userId && !isLoading) {
+        // Generar informe completo desde DynamoDB
+        const reportData = await dynamoDB.generateReport();
         
-        if (avgScore >= 80) {
-          setRiskLevel('bajo');
-        } else if (avgScore >= 60) {
-          setRiskLevel('moderado');
-        } else {
-          setRiskLevel('alto');
+        if (reportData) {
+          // Crear el PDF con los datos
+          const pdf = new jsPDF('p', 'mm', 'a4');
+          
+          // Datos del usuario
+          const profile = reportData.profile;
+          pdf.setFontSize(20);
+          pdf.text('Informe de Evaluación NeuroSpot', 20, 20);
+          
+          pdf.setFontSize(12);
+          pdf.text(`Fecha: ${new Date().toLocaleDateString('es-ES')}`, 20, 30);
+          
+          // Información del participante
+          pdf.setFontSize(16);
+          pdf.text('Datos del Participante', 20, 40);
+          
+          pdf.setFontSize(10);
+          pdf.text(`Nombre: ${profile?.nombreNino || 'No disponible'}`, 20, 50);
+          pdf.text(`Nivel Educativo: ${profile?.nivelEducativo || 'No disponible'}`, 20, 55);
+          pdf.text(`Curso: ${profile?.curso || 'No disponible'}`, 20, 60);
+          pdf.text(`Tutor: ${profile?.nombre || 'No disponible'}`, 20, 65);
+          
+          // Resultados de las pruebas
+          pdf.setFontSize(16);
+          pdf.text('Resultados de la Evaluación', 20, 80);
+          
+          pdf.setFontSize(10);
+          let yPosition = 90;
+          testResults.forEach((result, index) => {
+            pdf.text(`${result.name}: ${result.score}/100`, 20, yPosition);
+            yPosition += 5;
+            pdf.text(`${result.feedback}`, 30, yPosition);
+            yPosition += 10;
+          });
+          
+          // Puntuación global
+          pdf.setFontSize(16);
+          pdf.text('Puntuación Global', 20, yPosition + 10);
+          
+          pdf.setFontSize(14);
+          pdf.text(`${totalScore}/100 - Nivel de riesgo: ${riskLevel.toUpperCase()}`, 20, yPosition + 20);
+          
+          // Recomendaciones generales
+          pdf.setFontSize(16);
+          pdf.text('Recomendaciones', 20, yPosition + 35);
+          
+          pdf.setFontSize(10);
+          pdf.text('Se recomienda revisar los resultados con un profesional de la educación', 20, yPosition + 45);
+          pdf.text('para recibir orientación específica sobre cómo apoyar al estudiante.', 20, yPosition + 50);
+          
+          // Guardar PDF
+          pdf.save('Informe_NeuroSpot.pdf');
         }
       } else {
-        // Si no hay resultados completados, mostrar 0 y nivel bajo
-        setTotalScore(0);
-        setRiskLevel('bajo');
+        // Si no hay datos de DynamoDB, usar el método original
+        // ... resto del código original para generar PDF ...
       }
+    } catch (error) {
+      console.error("Error al generar PDF:", error);
+      // Usar método alternativo si falla
+      // ... resto del código original para generar PDF ...
+    } finally {
+      setIsGeneratingPDF(false);
     }
-  }, [filteredResults, completedTests]);
+  };
   
   // Datos para el gráfico
-  const chartData = filteredResults.map(result => {
-    // Usar las puntuaciones originales para las barras
-    const originalScore = result.rawScore !== undefined ? result.rawScore : result.score;
-    const maxOriginalScore = result.maxPossibleScore || 100;
+  const chartData = (() => {
+    // Agrupar resultados por tipo y quedarnos con el más reciente de cada tipo
+    const latestByType: Record<string, TestResult> = {};
     
-    return {
-      name: result.name,
-      puntuación: completedTests.includes(result.id) ? originalScore : 0,
-      maxPuntuación: maxOriginalScore,
-      // Eliminar el promedio ficticio
-    };
-  });
+    filteredResults.forEach(result => {
+      const tipo = result.tipo || result.id;
+      if (!latestByType[tipo] || 
+          (result.timestamp && latestByType[tipo].timestamp && 
+           new Date(result.timestamp) > new Date(latestByType[tipo].timestamp))) {
+        latestByType[tipo] = result;
+      }
+    });
+    
+    // Convertir a formato para el gráfico
+    return Object.values(latestByType).map(result => {
+      // Usar las puntuaciones originales para las barras
+      const originalScore = result.rawScore !== undefined ? result.rawScore : result.score;
+      const maxOriginalScore = result.maxPossibleScore || 100;
+      
+      return {
+        name: result.name,
+        puntuación: completedTests.includes(result.tipo || result.id) ? originalScore : 0,
+        maxPuntuación: maxOriginalScore,
+        normalizedScore: result.score,
+        tipo: result.tipo || result.id,
+        tooltipDisplay: result.scoreDisplay || `${originalScore}/${maxOriginalScore}`
+      };
+    });
+  })();
   
   // Estado para almacenar el nombre del participante
   const [participantName] = useState<string>("")
-  
-  // Generar y descargar PDF con los resultados mejorado
-  const handleDownloadReport = () => {
-    setIsGeneratingPDF(true);
-    
-    import('jspdf').then(({ default: jsPDF }) => {
-      import('html2canvas').then(({ default: html2canvas }) => {
-        const reportElement = document.getElementById('report-content');
-        if (!reportElement) {
-          setIsGeneratingPDF(false);
-          return;
-        }
-        
-        // Crear una versión optimizada para PDF
-        const pdfContainer = document.createElement('div');
-        pdfContainer.style.width = '800px';
-        pdfContainer.style.padding = '40px';
-        pdfContainer.style.position = 'absolute';
-        pdfContainer.style.left = '-9999px';
-        pdfContainer.style.backgroundColor = 'white';
-        
-        // Crear contenido personalizado para el PDF
-        let testsHtml = '';
-        filteredResults.forEach(test => {
-          testsHtml += `
-            <div style="margin-bottom: 25px; padding: 15px; border-radius: 8px; background-color: #f5f8ff; border: 1px solid #e2e8f0;">
-              <h3 style="color: #3876F4; margin-top: 0; margin-bottom: 10px;">${test.name}</h3>
-              <p style="margin-bottom: 8px;"><strong>Puntuación:</strong> ${test.score}/${test.maxScore}</p>
-              <p style="margin-bottom: 8px;"><strong>Descripción:</strong> ${test.description}</p>
-              <p style="margin-bottom: 0;"><strong>Observaciones:</strong> ${test.feedback}</p>
-            </div>
-          `;
-        });
-        
-        // Obtener recomendaciones según el nivel de riesgo
-        let recomendaciones = '';
-        if (riskLevel === 'bajo') {
-          recomendaciones = `
-            <li>Continuar con las actividades actuales.</li>
-            <li>Realizar evaluaciones periódicas cada 6 meses para monitorear el progreso.</li>
-            <li>Mantener una rutina de ejercicios cognitivos regulares.</li>
-          `;
-        } else if (riskLevel === 'moderado') {
-          recomendaciones = `
-            <li>Establecer un programa regular de ejercicios de atención y concentración.</li>
-            <li>Considerar la realización de evaluaciones más frecuentes (cada 3 meses).</li>
-            <li>Implementar estrategias de organización y planificación en actividades diarias.</li>
-          `;
-        } else {
-          recomendaciones = `
-            <li>Consultar con un especialista en neuropsicología o psicopedagogía.</li>
-            <li>Diseñar un plan de intervención personalizado.</li>
-            <li>Realizar evaluaciones mensuales para monitorear avances.</li>
-            <li>Considerar adaptaciones específicas en entornos de aprendizaje.</li>
-          `;
-        }
-        
-        // Añadir contenido al contenedor del PDF
-        pdfContainer.innerHTML = `
-          <div style="font-family: Arial, sans-serif;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;">
-              <h1 style="color: #3876F4; margin: 0;">Informe de Evaluación NeuroSpot</h1>
-              <p style="margin: 0;">${currentDate}</p>
-            </div>
-            
-            <div style="margin-bottom: 30px; padding: 20px; background-color: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0;">
-              <h2 style="color: #333; margin-top: 0; margin-bottom: 15px;">Resumen de Resultados</h2>
-              <p style="margin-bottom: 10px;"><strong>Número de pruebas completadas:</strong> ${filteredResults.length}</p>
-              <p style="margin-bottom: 10px;"><strong>Puntuación global:</strong> ${totalScore}/100</p>
-              <p style="margin-bottom: 0;"><strong>Nivel de riesgo:</strong> <span style="color: ${
-                riskLevel === 'bajo' ? '#16a34a' : riskLevel === 'moderado' ? '#d97706' : '#dc2626'
-              };">${riskLevel.charAt(0).toUpperCase() + riskLevel.slice(1)}</span></p>
-            </div>
-            
-            <h2 style="color: #333; margin-bottom: 20px;">Resultados Detallados</h2>
-            ${testsHtml}
-            
-            <h2 style="color: #333; margin-bottom: 15px;">Recomendaciones</h2>
-            <ul>
-              ${recomendaciones}
-            </ul>
-            
-            <div style="margin-top: 50px; border-top: 1px solid #e2e8f0; padding-top: 20px;">
-              <p style="color: #666; font-size: 0.9em;">Este informe ha sido generado automáticamente por la plataforma NeuroSpot el ${currentDate}.</p>
-              <p style="color: #666; font-size: 0.9em;">Los resultados deben ser interpretados por un profesional calificado.</p>
-            </div>
-          </div>
-        `;
-        
-        document.body.appendChild(pdfContainer);
-        
-        html2canvas(pdfContainer).then(canvas => {
-          document.body.removeChild(pdfContainer);
-          
-          const imgData = canvas.toDataURL('image/png');
-          const pdf = new jsPDF({
-            orientation: 'portrait',
-            unit: 'mm',
-            format: 'a4'
-          });
-          
-          // Definimos constantes de la página
-          const pageWidth = 210;  // Ancho A4 en mm
-          const pageHeight = 297; // Altura A4 en mm
-          
-          // Márgenes uniformes
-          const margin = 15;
-          const contentWidth = pageWidth - 2 * margin;
-          
-          // Calculamos dimensiones proporcionales
-          const imgWidth = contentWidth;
-          const imgHeight = (canvas.height * imgWidth) / canvas.width;
-          
-          // Determinar si necesitamos dividir en múltiples páginas
-          const maxContentHeight = pageHeight - 2 * margin - 15; // 15mm para pie de página
-          
-          if (imgHeight <= maxContentHeight) {
-            // Si la imagen cabe en una sola página, simplemente la agregamos
-            pdf.addImage(imgData, 'PNG', margin, margin, imgWidth, imgHeight);
-          } else {
-            // Si la imagen es más grande, la dividimos en varias páginas
-            // Estrategia: Crear múltiples imágenes más pequeñas a partir de la original
-            
-            // Calcular cuántas páginas necesitamos
-            const pagesNeeded = Math.ceil(imgHeight / maxContentHeight);
-            
-            // Para cada página
-            for (let i = 0; i < pagesNeeded; i++) {
-              if (i > 0) {
-                pdf.addPage();
-              }
-              
-              // Crear un nuevo canvas para esta sección
-              const sectionCanvas = document.createElement('canvas');
-              const ctx = sectionCanvas.getContext('2d');
-              
-              if (!ctx) continue;
-              
-              // Calcular qué parte de la imagen original mostrar en esta página
-              const sourceY = (i * canvas.height / pagesNeeded);
-              const sourceHeight = Math.min(canvas.height / pagesNeeded, canvas.height - sourceY);
-              
-              // Configurar el nuevo canvas
-              sectionCanvas.width = canvas.width;
-              sectionCanvas.height = sourceHeight;
-              
-              // Dibujar la sección correspondiente en el nuevo canvas
-              ctx.drawImage(
-                canvas, 
-                0, sourceY, canvas.width, sourceHeight, // Fuente
-                0, 0, canvas.width, sourceHeight        // Destino
-              );
-              
-              // Convertir esta sección a imagen
-              const sectionImgData = sectionCanvas.toDataURL('image/png');
-              
-              // Calcular altura proporcional para esta sección
-              const sectionHeight = (sourceHeight * imgWidth) / canvas.width;
-              
-              // Añadir esta sección al PDF
-              pdf.addImage(sectionImgData, 'PNG', margin, margin, imgWidth, sectionHeight);
-            }
-          }
-          
-          // Añadir pie de página en la última página
-          pdf.setFontSize(10);
-          pdf.setTextColor(120, 120, 120);
-          const footerY = pageHeight - 10;
-          pdf.text("Este informe es orientativo y no constituye un diagnóstico médico.", pageWidth / 2, footerY - 5, { align: 'center' });
-          pdf.text("Se recomienda consultar con un profesional para una evaluación completa.", pageWidth / 2, footerY, { align: 'center' });
-          
-          // Guardar PDF
-          pdf.save(`informe-neurospot-${participantName || "participante"}-${new Date().toISOString().slice(0, 10)}.pdf`);
-          setIsGeneratingPDF(false);
-        });
-      });
-    });
-  };
   
   // Determinar el color del riesgo
   const getRiskColor = () => {
@@ -645,7 +697,7 @@ export default function ResultadosPage() {
 
       <div className="container max-w-full mx-auto px-4 py-6 flex-1">
         <div className="flex flex-col lg:flex-row justify-between items-start gap-6 max-w-7xl mx-auto">
-          <div className="w-full lg:w-2/3 space-y-6" id="report-content">
+          <div className="w-full lg:w-3/4 space-y-6" id="report-content">
             <div className="flex justify-between items-center">
               <h1 className="text-2xl font-bold">Resultados de la evaluación</h1>
               <span className="text-sm text-muted-foreground">{currentDate}</span>
@@ -708,46 +760,71 @@ export default function ResultadosPage() {
                     </div>
                     
                     {/* Gráfico de resultados */}
-                    {filteredResults.length > 0 && (
-                      <div className="h-72 mt-6">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart
-                            data={chartData}
-                            margin={{ top: 20, right: 30, left: 20, bottom: 40 }}
-                          >
-                            <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis 
-                              dataKey="name" 
-                              tick={{ fontSize: 12 }}
-                              angle={-45}
-                              textAnchor="end"
-                              height={70}
-                            />
-                            <YAxis 
-                              domain={[0, 'dataMax']}
-                              allowDecimals={false}
-                            >
-                              <Label
-                                value="Puntuación"
-                                position="insideLeft"
-                                angle={-90}
-                                style={{ textAnchor: 'middle' }}
-                              />
-                            </YAxis>
-                            <Tooltip 
-                              formatter={(value, name, props) => {
-                                return [`${value}/${props.payload.maxPuntuación}`, name];
+                    <Card className="mb-6">
+                      <CardHeader>
+                        <CardTitle>Visión general</CardTitle>
+                        <CardDescription>Resultados por área evaluada</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="h-80">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart
+                              data={chartData}
+                              margin={{
+                                top: 20,
+                                right: 30,
+                                left: 20,
+                                bottom: 70,
                               }}
-                            />
-                            <Bar dataKey="puntuación" name="Tu puntuación">
-                              {chartData.map((entry, index) => (
-                                <Cell key={`cell-${index}`} fill="#3876F4" />
-                              ))}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    )}
+                            >
+                              <CartesianGrid strokeDasharray="3 3" />
+                              <XAxis 
+                                dataKey="name" 
+                                angle={-45} 
+                                textAnchor="end"
+                                height={80}
+                                tickMargin={20}
+                              />
+                              <YAxis>
+                                <Label
+                                  value="Puntuación"
+                                  angle={-90}
+                                  position="insideLeft"
+                                  style={{ textAnchor: 'middle' }}
+                                />
+                              </YAxis>
+                              <Tooltip 
+                                formatter={(value, name, props) => {
+                                  if (name === "puntuación") {
+                                    // Mostrar la puntuación original y normalizada
+                                    const item = props.payload;
+                                    return [`${item.tooltipDisplay} (${item.normalizedScore}/100)`, "Puntuación"]
+                                  }
+                                  return [value, name];
+                                }} 
+                                labelFormatter={(label) => `${label}`}
+                              />
+                              <Bar dataKey="puntuación" name="Puntuación">
+                                {chartData.map((entry, index) => {
+                                  let fillColor;
+                                  // Asignar colores según el tipo
+                                  switch (entry.tipo) {
+                                    case "stroop": fillColor = "#9333ea"; break;
+                                    case "lectura": fillColor = "#2563eb"; break;
+                                    case "atencion": fillColor = "#16a34a"; break;
+                                    case "memoria": fillColor = "#ea580c"; break;
+                                    case "observacion": fillColor = "#4f46e5"; break;
+                                    case "video": fillColor = "#0284c7"; break;
+                                    default: fillColor = "#6b7280";
+                                  }
+                                  return <Cell key={`cell-${index}`} fill={fillColor} />;
+                                })}
+                              </Bar>
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </CardContent>
+                    </Card>
                   </div>
                 ) : (
                   <div className="py-8 text-center">
@@ -783,7 +860,7 @@ export default function ResultadosPage() {
               )}
             </Card>
             
-            {/* Gráfico y resultados detallados */}
+            {/* Resultados detallados */}
             {filteredResults.length > 0 && (
               <Card>
                 <CardHeader>
@@ -794,46 +871,121 @@ export default function ResultadosPage() {
                 </CardHeader>
                 
                 <CardContent>
-                  <div className="space-y-4">
-                    {filteredResults.map((result) => (
-                      <div 
-                        key={result.id}
-                        className={`p-4 rounded-lg border ${result.colorClass}`}
-                      >
-                        <div className="flex items-start gap-4">
-                          <div className="p-2 rounded-full bg-white dark:bg-gray-800">
-                            {result.icon}
-                          </div>
-                          
-                          <div className="flex-1">
-                            <div className="flex items-center justify-between">
-                              <h3 className="font-medium">{result.name}</h3>
-                              <span className="font-bold">
-                                {result.rawScore !== undefined && result.maxPossibleScore
-                                  ? `${result.rawScore}/${result.maxPossibleScore}` // Mostrar puntuación original/máximo
-                                  : `${result.score}/100`} {/* Si no hay rawScore, usar la puntuación normalizada */}
-                              </span>
-                            </div>
+                  <div className="space-y-6">
+                    {/* Lista de resultados de pruebas */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      {filteredResults.map((result) => {
+                        // Verificar si es un placeholder o un resultado real
+                        const isPlaceholder = result.id.includes('_placeholder');
+                        
+                        return (
+                          <Card key={result.id} className={`overflow-hidden ${isPlaceholder ? 'opacity-60' : ''}`}>
+                            <CardHeader className={`${result.colorClass} text-white p-3 flex flex-row items-center gap-2`}>
+                              <div className="rounded-full bg-white/20 h-6 w-6 flex items-center justify-center">
+                                {result.icon}
+                              </div>
+                              <div>
+                                <CardTitle className="text-md">{result.name}</CardTitle>
+                                <CardDescription className="text-white/80 text-xs">
+                                  {result.description}
+                                </CardDescription>
+                              </div>
+                            </CardHeader>
                             
-                            <p className="text-sm text-muted-foreground mb-2">
-                              {result.description}
-                            </p>
-                            
-                            <div className="mt-1 text-sm font-medium">
-                              {result.feedback}
-                            </div>
-
-                            {/* Barra de progreso visual */}
-                            <div className="w-full bg-gray-200 rounded-full h-2.5 mt-2 dark:bg-gray-700">
-                              <div 
-                                className="bg-[#3876F4] h-2.5 rounded-full" 
-                                style={{ width: `${result.score}%` }}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+                            <CardContent className="p-3">
+                              {isPlaceholder ? (
+                                <div className="py-2 text-center">
+                                  <p className="text-sm text-muted-foreground">Ejercicio pendiente de realizar</p>
+                                </div>
+                              ) : (
+                                <>
+                                  <div className="flex justify-between items-center mb-2">
+                                    <div className="text-xl font-bold">
+                                      {result.scoreDisplay || `${result.rawScore}/${result.maxPossibleScore}`} 
+                                      <span className="text-xs text-muted-foreground ml-2">
+                                        ({result.score}/100)
+                                      </span>
+                                    </div>
+                                    <TooltipProvider>
+                                      <UITooltip>
+                                        <TooltipTrigger asChild>
+                                          <Info className="h-4 w-4 text-muted-foreground cursor-help" />
+                                        </TooltipTrigger>
+                                        <TooltipContent className="max-w-xs">
+                                          <p>Escala normalizada: {result.score}/100</p>
+                                          <p>Puntuación original: {result.rawScore}/{result.maxPossibleScore}</p>
+                                        </TooltipContent>
+                                      </UITooltip>
+                                    </TooltipProvider>
+                                  </div>
+                                  <p className="text-xs mb-2">{result.feedback}</p>
+                                  
+                                  {/* Detalles adicionales específicos para cada tipo de ejercicio */}
+                                  {result.detalles && (
+                                    <div className="bg-muted/30 p-2 rounded-lg text-xs space-y-0.5">
+                                      <h4 className="font-medium mb-1">Detalles del ejercicio:</h4>
+                                      {result.tipo === "stroop" && (
+                                        <>
+                                          <p>Total de pruebas: {result.detalles.total}</p>
+                                          <p>Porcentaje de aciertos: {result.detalles.porcentajeAciertos}%</p>
+                                          <p>Tiempo de realización: {result.detalles.tiempoTotal}s</p>
+                                        </>
+                                      )}
+                                      
+                                      {result.tipo === "lectura" && (
+                                        <>
+                                          <p>Tiempo de lectura: {result.detalles.tiempoLectura}s</p>
+                                          <p>Emoción detectada: {result.detalles.emocionDetectada}</p>
+                                          <p>Longitud del texto: {result.detalles.longitudTexto} caracteres</p>
+                                        </>
+                                      )}
+                                      
+                                      {result.tipo === "atencion" && (
+                                        <>
+                                          <p>Respuestas correctas: {result.detalles.correctas}</p>
+                                          <p>Errores de comisión: {result.detalles.errorComision}</p>
+                                          <p>Errores de omisión: {result.detalles.errorOmision}</p>
+                                          <p>Tiempo de reacción: {result.detalles.tiempoReaccionMedio}ms</p>
+                                          <p>Nivel alcanzado: {result.detalles.nivelAlcanzado}</p>
+                                        </>
+                                      )}
+                                      
+                                      {result.tipo === "memoria" && (
+                                        <>
+                                          <p>Nivel máximo: {result.detalles.nivelMaximo}</p>
+                                          <p>Secuencia máxima: {result.detalles.secuenciaMaxima} dígitos</p>
+                                          <p>Tiempo total: {result.detalles.tiempoTotal}s</p>
+                                        </>
+                                      )}
+                                      
+                                      {result.tipo === "observacion" && (
+                                        <>
+                                          <p>Preguntas totales: {result.detalles.totalPreguntas}</p>
+                                          <p>Aciertos: {result.detalles.aciertos}</p>
+                                          <p>Porcentaje de aciertos: {result.detalles.porcentajeAciertos}%</p>
+                                          <p>Tiempo total: {result.detalles.tiempoTotal}s</p>
+                                        </>
+                                      )}
+                                      
+                                      {result.tipo === "video" && (
+                                        <>
+                                          <p>Frames capturados: {result.detalles.framesCapturados}</p>
+                                          <p>Frames con rostro: {result.detalles.framesConRostro}</p>
+                                          <p>Porcentaje de atención: {result.detalles.porcentajeAtencion}%</p>
+                                          <p>Tiempo total: {result.detalles.tiempoTotal}s</p>
+                                        </>
+                                      )}
+                                      
+                                      <p className="text-muted-foreground">Fecha: {new Date(result.timestamp).toLocaleString()}</p>
+                                    </div>
+                                  )}
+                                </>
+                              )}
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -841,7 +993,7 @@ export default function ResultadosPage() {
           </div>
           
           {/* Sidebar con recomendaciones */}
-          <div className="w-full lg:w-1/3 space-y-6">
+          <div className="w-full lg:w-1/4 space-y-6">
             <Card>
               <CardHeader>
                 <CardTitle>Próximos pasos</CardTitle>

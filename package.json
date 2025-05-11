@@ -1,6 +1,8 @@
 {
   "dependencies": {
     "@aws-sdk/client-rekognition": "^3.804.0",
+    "@aws-sdk/client-transcribe": "^3.804.0",
+    "@aws-sdk/client-comprehend": "^3.804.0",
     "@aws-sdk/client-s3": "^3.804.0",
     "@aws-sdk/s3-request-presigner": "^3.804.0",
     "@fortawesome/fontawesome-svg-core": "^6.7.2",
@@ -10,6 +12,7 @@
     "@fortawesome/react-fontawesome": "^0.2.2",
     "@hookform/resolvers": "^5.0.1",
     "@types/uuid": "^10.0.0",
+    "dotenv": "^16.5.0",
     "oidc-client-ts": "^3.2.1",
     "react-hook-form": "^7.56.1",
     "react-oidc-context": "^3.3.0",

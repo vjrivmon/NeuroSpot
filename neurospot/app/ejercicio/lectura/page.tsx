@@ -16,22 +16,31 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { PauseCircle, Mic, MicOff, ArrowRight, Check, Save } from "lucide-react"
+import { PauseCircle, Mic, MicOff, ArrowRight, Check, Loader2 } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { useDynamo } from "@/hooks/use-dynamo"
 
 const textoLectura = `El sol brillaba en el cielo azul mientras los pájaros cantaban alegremente entre los árboles del parque. Un niño jugaba con su perro cerca del lago, lanzando una pelota que el animal perseguía con entusiasmo. Cerca de allí, algunas personas disfrutaban de un picnic sobre el césped verde, compartiendo risas y comida. El viento suave movía las hojas de los árboles creando una melodía relajante que invitaba a quedarse un rato más.`
 
 export default function LecturaPage() {
+  const [textoActual, setTextoActual] = useState<string>(textoLectura)
   const [recording, setRecording] = useState(false)
-  const [completed, setCompleted] = useState(false)
-  const [progress, setProgress] = useState(0)
   const [recordingTime, setRecordingTime] = useState(0)
-  const [showDialog, setShowDialog] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const [completed, setCompleted] = useState(false)
   const [recordingSaved, setRecordingSaved] = useState(false)
+  const [showDialog, setShowDialog] = useState(false)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
+  const [transcriptionStatus, setTranscriptionStatus] = useState<'idle' | 'processing' | 'completed'>('idle')
+  const [transcriptionJobName, setTranscriptionJobName] = useState<string | null>(null)
+  const [emocionUsuario, setEmocionUsuario] = useState<string | null>(null)
+  const [startTime, setStartTime] = useState<number>(0)
+  
+  const router = useRouter()
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
-  const router = useRouter()
+  const timerRef = useRef<NodeJS.Timeout | null>(null)
+  const dynamo = useDynamo()
 
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
@@ -60,11 +69,41 @@ export default function LecturaPage() {
     };
   }, [recording, completed]);
 
+  // Efecto para verificar el estado de la transcripción
+  useEffect(() => {
+    let interval: NodeJS.Timeout | null = null;
+    
+    if (transcriptionStatus === 'processing' && transcriptionJobName) {
+      interval = setInterval(async () => {
+        try {
+          const response = await fetch(`/api/transcribe?jobName=${transcriptionJobName}`);
+          const data = await response.json();
+          
+          if (data.status === 'COMPLETED') {
+            setTranscriptionStatus('completed');
+            setEmocionUsuario(data.emocion);
+            clearInterval(interval as NodeJS.Timeout);
+          }
+        } catch (error) {
+          console.error("Error al verificar estado de transcripción:", error);
+        }
+      }, 5000); // Verificar cada 5 segundos
+    }
+    
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [transcriptionStatus, transcriptionJobName]);
+
   const startRecording = async () => {
+    setStartTime(Date.now());
+    
     try {
       // Reset states if starting a new recording
       setRecordingSaved(false);
       setAudioUrl(null);
+      setTranscriptionStatus('idle');
+      setEmocionUsuario(null);
       
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mediaRecorder = new MediaRecorder(stream);
@@ -91,7 +130,8 @@ export default function LecturaPage() {
         // Cerrar los tracks de audio para liberar el micrófono
         stream.getTracks().forEach(track => track.stop());
         
-        console.log("Grabación completada y guardada:", audioBlob);
+        // Iniciar el proceso de transcripción
+        startTranscription(audioBlob);
       };
 
       mediaRecorder.start();
@@ -102,6 +142,64 @@ export default function LecturaPage() {
     }
   };
 
+  const startTranscription = async (audioBlob: Blob) => {
+    try {
+      setTranscriptionStatus('processing');
+      
+      // Crear FormData para enviar el archivo
+      const formData = new FormData();
+      formData.append('audio', audioBlob, 'audio.wav');
+      
+      // Obtener userId del localStorage (si está disponible)
+      let userId = 'anonymous';
+      if (typeof window !== 'undefined') {
+        const storedUserId = localStorage.getItem('userId');
+        if (storedUserId) userId = storedUserId;
+      }
+      formData.append('userId', userId);
+      
+      console.log("Iniciando análisis de audio para el usuario:", userId);
+      console.log("Tamaño del archivo de audio:", Math.round(audioBlob.size / 1024), "KB");
+      
+      // Enviar solicitud al endpoint de transcripción
+      const response = await fetch('/api/transcribe', {
+        method: 'POST',
+        body: formData,
+      });
+      
+      if (!response.ok) {
+        console.error("Error en la respuesta del servidor:", response.status, response.statusText);
+        throw new Error(`Error en la respuesta: ${response.status} ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        console.log("Análisis de audio iniciado exitosamente. Job:", data.jobName);
+        console.log("Emoción detectada:", data.emocion);
+        setTranscriptionJobName(data.jobName);
+        
+        // Si ya tenemos la emoción, actualizar el estado directamente
+        if (data.emocion) {
+          setEmocionUsuario(data.emocion);
+          setTranscriptionStatus('completed');
+        }
+      } else {
+        console.error("Error al iniciar análisis de audio:", data.error);
+        alert(`Error al iniciar análisis de audio: ${data.error}`);
+        setTranscriptionStatus('idle');
+      }
+    } catch (error) {
+      console.error("Error al enviar audio para análisis:", error);
+      let errorMessage = "Error desconocido";
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      alert(`Error al procesar el audio: ${errorMessage}`);
+      setTranscriptionStatus('idle');
+    }
+  };
+
   const stopRecording = () => {
     if (mediaRecorderRef.current && recording) {
       mediaRecorderRef.current.stop();
@@ -109,20 +207,73 @@ export default function LecturaPage() {
     }
   };
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
+    // Calcular la duración del ejercicio
+    const endTime = Date.now();
+    const durationInMs = endTime - startTime;
+    const durationInSec = Math.floor(durationInMs / 1000);
+    
     // Guardar este ejercicio como completado en localStorage
     if (typeof window !== 'undefined') {
       try {
         const saved = localStorage.getItem("completedExercises") 
-        let completedExercises = saved ? JSON.parse(saved) : []
+        const completedExercises = saved ? JSON.parse(saved) : []
         
         if (!completedExercises.includes("lectura")) {
           completedExercises.push("lectura")
           localStorage.setItem("completedExercises", JSON.stringify(completedExercises))
+          console.log("Ejercicio de Lectura completado y guardado en localStorage")
         }
       } catch (e) {
         console.error("Error updating completedExercises:", e)
       }
+    }
+    
+    // Guardar los resultados en DynamoDB
+    try {
+      // Calcular puntuación basada en tiempo de grabación y emoción
+      // Si no hay emoción detectada, asignamos 70 puntos base
+      const puntuacionBase = 70;
+      let puntuacionEmocion = 0;
+      
+      // Ajuste por emoción detectada
+      if (emocionUsuario) {
+        // Bonificación para emociones neutras o calmadas, que son ideales para una lectura
+        if (emocionUsuario.toLowerCase().includes('calm') || 
+            emocionUsuario.toLowerCase().includes('neutral')) {
+          puntuacionEmocion = 30;
+        } else if (emocionUsuario.toLowerCase().includes('happy')) {
+          puntuacionEmocion = 20;
+        } else {
+          puntuacionEmocion = 10; // Otras emociones
+        }
+      }
+      
+      const puntuacionFinal = Math.min(100, puntuacionBase + puntuacionEmocion);
+      
+      // Datos del ejercicio a guardar
+      const exerciseData = {
+        tipo: "lectura",
+        puntuacion: puntuacionFinal,
+        duracion: durationInSec,
+        detalles: {
+          tiempoLectura: recordingTime,
+          emocionDetectada: emocionUsuario || "No detectada",
+          longitudTexto: textoActual.length,
+          tiempoTotal: durationInSec
+        }
+      }
+      
+      // Guardar en DynamoDB
+      const result = await dynamo.saveExerciseResult(exerciseData)
+      
+      if (!result.success) {
+        console.error("Error al guardar resultados en DynamoDB:", result.error)
+      } else {
+        console.log("Resultados de Lectura guardados correctamente en DynamoDB:", exerciseData)
+      }
+    } catch (error) {
+      console.error("Error al procesar resultados de lectura:", error)
     }
 
     router.push("/ejercicio/atencion");
@@ -169,7 +320,7 @@ export default function LecturaPage() {
               </div>
 
               <div className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
-                <p className="text-base leading-relaxed">{textoLectura}</p>
+                <p className="text-base leading-relaxed">{textoActual}</p>
               </div>
               
               {recordingSaved && (
@@ -185,6 +336,30 @@ export default function LecturaPage() {
                           <audio controls src={audioUrl} className="w-full h-8 mt-1" />
                         </div>
                       )}
+                    </AlertDescription>
+                  </div>
+                </Alert>
+              )}
+              
+              {transcriptionStatus === 'processing' && (
+                <Alert className="bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800">
+                  <Loader2 className="h-4 w-4 text-blue-600 dark:text-blue-400 animate-spin" />
+                  <AlertTitle className="text-blue-800 dark:text-blue-300">Procesando audio...</AlertTitle>
+                  <AlertDescription className="text-blue-700 dark:text-blue-400 text-sm">
+                    Estamos analizando tu grabación. Esto puede tardar unos segundos.
+                  </AlertDescription>
+                </Alert>
+              )}
+              
+              {transcriptionStatus === 'completed' && emocionUsuario && (
+                <Alert className="bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800">
+                  <Check className="h-4 w-4 text-green-600 dark:text-green-400" />
+                  <div>
+                    <AlertTitle className="text-green-800 dark:text-green-300">¡Análisis de audio completado!</AlertTitle>
+                    <AlertDescription className="text-green-700 dark:text-green-400 text-sm">
+                      <div className="mt-1">
+                        <p className="font-medium">Tu tono de voz suena: <span className="font-bold">{emocionUsuario}</span></p>
+                      </div>
                     </AlertDescription>
                   </div>
                 </Alert>
@@ -211,8 +386,17 @@ export default function LecturaPage() {
                 <Button 
                   className="w-full h-12 text-white font-medium bg-[#3876F4] hover:bg-[#3876F4]/90"
                   onClick={handleContinue}
+                  disabled={transcriptionStatus === 'processing'}
                 >
-                  <ArrowRight className="mr-2 h-5 w-5" /> Continuar con la siguiente prueba
+                  {transcriptionStatus === 'processing' ? (
+                    <>
+                      <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Procesando...
+                    </>
+                  ) : (
+                    <>
+                      <ArrowRight className="mr-2 h-5 w-5" /> Continuar con la siguiente prueba
+                    </>
+                  )}
                 </Button>
               )}
             </div>

@@ -18,6 +18,7 @@ import Link from "next/link"
 import { useLocalAuth } from "../providers/auth-provider"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
+import { ProgressBar } from "@/components/progress-bar"
 
 interface Ejercicio {
   id: string
@@ -174,45 +175,12 @@ export default function PanelPage() {
     <main className="min-h-screen flex flex-col">
       <Header showBackButton />
 
-      <div className="container max-w-full mx-auto px-4 py-8 flex-1">
-        <div className="max-w-4xl mx-auto space-y-6">
-          {/* Información del usuario autenticado */}
-          {showSessionMessage && (
-            <div className={`bg-green-50 dark:bg-green-950 py-4 px-6 border border-green-200 dark:border-green-800 rounded-lg mb-4 transition-opacity duration-1000 ${fadeOut ? 'opacity-0' : 'opacity-100'}`}>
-              <div className="flex justify-between items-center">
-                <p className="text-sm text-green-800 dark:text-green-200">
-                  Sesión iniciada como: {localAuth.email || "Usuario local"}
-                </p>
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  onClick={handleLogout}
-                  className="h-8 w-8 text-gray-500 hover:bg-green-100 dark:hover:bg-green-900"
-                  aria-label="Cerrar sesión"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          )}
+      <div className="container max-w-full mx-auto p-6 flex-1">
+        {/* Barra de progreso mejorada */}
+        <ProgressBar />
 
-          {/* Barra de progreso global */}
-          <div className="bg-blue-50 dark:bg-blue-950 py-4 px-6 border border-blue-200 dark:border-blue-800 rounded-lg">
-            <div className="container max-w-full mx-auto">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-sm font-medium text-blue-800 dark:text-blue-200">Tu progreso</h3>
-                <span className="text-xs text-blue-600 dark:text-blue-300">{progressPercentage}% completado</span>
-              </div>
-              <div className="w-full bg-white dark:bg-gray-800 rounded-full h-2.5 border border-blue-100 dark:border-blue-900">
-                <div 
-                  className="bg-[#3876F4] h-2.5 rounded-full transition-all duration-300 ease-in-out" 
-                  style={{ width: `${progressPercentage}%` }}
-                ></div>
-              </div>
-            </div>
-          </div>
-
-          <h1 className="text-2xl font-bold mb-6 text-center">¡Vamos a realizar algunas pruebas divertidas!</h1>
+        <div className="max-w-7xl mx-auto mt-8">
+          <h1 className="text-2xl font-bold text-center">¡Vamos a realizar algunas pruebas divertidas!</h1>
           
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 w-full">
             {ejercicios.map((ejercicio) => (

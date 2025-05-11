@@ -17,6 +17,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { PauseCircle, ArrowRight } from "lucide-react"
+import { useDynamo } from "@/hooks/use-dynamo"
 
 type MemoryStep = "instructions" | "sequence" | "input" | "result" | "completed"
 
@@ -29,7 +30,9 @@ export default function MemoriaPage() {
   const [progress, setProgress] = useState(0)
   const [result, setResult] = useState<"correct" | "incorrect" | null>(null)
   const [maxLevel, setMaxLevel] = useState(2)
+  const [startTime, setStartTime] = useState<number>(0)
   const router = useRouter()
+  const dynamo = useDynamo()
 
   // Genera una nueva secuencia basada en el nivel actual
   const generateSequence = () => {
@@ -39,7 +42,27 @@ export default function MemoriaPage() {
     }
     setSequence(newSequence)
     setUserInput([])
+    setResult("")
+    setStartTime(Date.now())
+    
+    // Mostrar los números secuencialmente
     setProgress(0)
+    const intervalTime = 1000 // 1 segundo por número
+    const interval = setInterval(() => {
+      setProgress(prev => {
+        const newProgress = prev + (100 / (level + 1))
+        
+        if (newProgress >= 100) {
+          clearInterval(interval)
+          setStep("input") // Pasar a la fase de input cuando se han mostrado todos los números
+          return 100
+        }
+        
+        return newProgress
+      })
+    }, intervalTime)
+    
+    return () => clearInterval(interval)
   }
 
   // Efecto para mostrar la secuencia
@@ -108,7 +131,11 @@ export default function MemoriaPage() {
   }
 
   // Completa el ejercicio
-  const completeExercise = () => {
+  const completeExercise = async () => {
+    const endTime = Date.now();
+    const durationInMs = endTime - startTime;
+    const durationInSec = Math.floor(durationInMs / 1000);
+    
     // Guardar este ejercicio como completado en localStorage
     if (typeof window !== 'undefined') {
       try {
@@ -118,10 +145,37 @@ export default function MemoriaPage() {
         if (!completedExercises.includes("memoria")) {
           completedExercises.push("memoria")
           localStorage.setItem("completedExercises", JSON.stringify(completedExercises))
+          console.log("Ejercicio de Memoria completado y guardado en localStorage")
         }
       } catch (e) {
         console.error("Error updating completedExercises:", e)
       }
+    }
+    
+    // Guardar los resultados en DynamoDB
+    try {
+      // Datos del ejercicio a guardar
+      const exerciseData = {
+        tipo: "memoria",
+        puntuacion: maxLevel - 1, // El nivel máximo alcanzado
+        duracion: durationInSec,
+        detalles: {
+          nivelMaximo: maxLevel - 1,
+          secuenciaMaxima: maxLevel - 1,
+          tiempoTotal: durationInSec
+        }
+      }
+      
+      // Guardar en DynamoDB
+      const result = await dynamo.saveExerciseResult(exerciseData)
+      
+      if (!result.success) {
+        console.error("Error al guardar resultados en DynamoDB:", result.error)
+      } else {
+        console.log("Resultados de Memoria guardados correctamente en DynamoDB")
+      }
+    } catch (error) {
+      console.error("Error al procesar resultados de memoria:", error)
     }
     
     router.push("/ejercicio/observacion")
