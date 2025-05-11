@@ -31,7 +31,8 @@ import {
   Camera,
   AlertTriangle,
   Check,
-  Info
+  Info,
+  Video
 } from "lucide-react"
 import { 
   Tooltip as UITooltip,
@@ -67,6 +68,8 @@ type TestResult = {
   rawScore?: number; // Opcional para compatibilidad con datos antiguos
   maxPossibleScore?: number; // Opcional para compatibilidad con datos antiguos
   timestamp?: string; // Para ordenar resultados
+  scoreDisplay?: string;
+  detalles?: any; // Guardar todos los detalles para mostrarlos
 };
 
 // Función para normalizar un puntaje a escala 0-100
@@ -157,131 +160,24 @@ export default function ResultadosPage() {
       if (!dynamoDB.isLoading && dynamoDB.userId) {
         setIsLoading(true)
         try {
+          // Formatear fecha actual
+          const now = new Date()
+          setCurrentDate(now.toLocaleDateString('es-ES', { 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric' 
+          }))
+
           // Obtener información del perfil
           const profile = await dynamoDB.getUserProfile()
           setUserProfile(profile)
           
           // Obtener resultados de ejercicios
           const allResults = await dynamoDB.getExerciseResults()
+          console.log("Resultados obtenidos de DynamoDB:", allResults?.length || 0);
           
           // Convertir resultados de DynamoDB al formato esperado por el componente
-          if (allResults && allResults.length > 0) {
-            const testIds = new Set<string>()
-            const convertedResults: TestResult[] = []
-            
-            // Procesar resultados por tipo
-            allResults.forEach((result: any) => {
-              testIds.add(result.tipo)
-              
-              // Obtener icono según el tipo
-                let icon;
-                let colorClass;
-                
-                switch (result.tipo) {
-                  case "stroop":
-                    icon = <Brain className="h-5 w-5" />;
-                    colorClass = "bg-purple-600";
-                    break;
-                  case "lectura":
-                    icon = <BookOpen className="h-5 w-5" />;
-                    colorClass = "bg-blue-600";
-                    break;
-                  case "atencion":
-                    icon = <Eye className="h-5 w-5" />;
-                    colorClass = "bg-green-600";
-                    break;
-                  case "memoria":
-                    icon = <Brain className="h-5 w-5" />;
-                    colorClass = "bg-orange-600";
-                    break;
-                  case "observacion":
-                    icon = <Camera className="h-5 w-5" />;
-                    colorClass = "bg-indigo-600";
-                    break;
-                  default:
-                    icon = <Info className="h-5 w-5" />;
-                    colorClass = "bg-gray-600";
-                }
-                
-                // Normalizar puntuación a escala 0-100 si es necesario
-                const score = result.detalles?.porcentajeAciertos || 
-                  normalizeScore(result.puntuacion, result.detalles?.total || 100);
-                
-                // Generar retroalimentación basada en el puntaje
-                const feedback = generateFeedback(result.tipo, score);
-                
-                // Mapear nombres de tipos a nombres más amigables
-                let name;
-                let description;
-                
-                switch (result.tipo) {
-                  case "stroop":
-                    name = "Test de Stroop";
-                    description = "Evaluación de control inhibitorio y atención selectiva";
-                    break;
-                  case "lectura":
-                    name = "Lectura Fluida";
-                    description = "Evaluación de fluidez y comprensión lectora";
-                    break;
-                  case "atencion":
-                    name = "Atención Sostenida";
-                    description = "Evaluación de la capacidad para mantener la atención durante un periodo prolongado";
-                    break;
-                  case "memoria":
-                    name = "Memoria Visual";
-                    description = "Evaluación de memoria de trabajo y recordación visual";
-                    break;
-                  case "observacion":
-                    name = "Atención Visual";
-                    description = "Evaluación de la capacidad para detectar detalles visuales";
-                    break;
-                  default:
-                    name = result.tipo.charAt(0).toUpperCase() + result.tipo.slice(1);
-                    description = "Evaluación de habilidades cognitivas";
-                }
-                
-                convertedResults.push({
-                id: result.tipo + "_" + result.timestamp, // Añadir timestamp para hacer el ID único
-                tipo: result.tipo, // Mantener el tipo original para agrupar
-                  name: name,
-                  score: score,
-                  maxScore: 100,
-                  description: description,
-                  feedback: feedback,
-                  icon: icon,
-                  colorClass: colorClass,
-                  rawScore: result.puntuacion,
-                maxPossibleScore: result.detalles?.total || 100,
-                timestamp: result.timestamp // Guardar el timestamp para ordenar
-              });
-                });
-            
-            // Ordenar resultados por tipo y fecha (más reciente primero)
-            convertedResults.sort((a, b) => {
-              if (a.tipo === b.tipo) {
-                return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
-              }
-              return a.tipo.localeCompare(b.tipo);
-            });
-            
-            // Actualizar estado con los resultados convertidos
-            setTestResults(convertedResults);
-            setFilteredResults(convertedResults);
-            setCompletedTests(Array.from(testIds));
-            
-            // Calcular puntuación total (promedio de todos los resultados)
-            const total = convertedResults.reduce((sum, result) => sum + result.score, 0) / convertedResults.length;
-            setTotalScore(Math.round(total));
-            
-            // Determinar nivel de riesgo basado en la puntuación total
-            if (total >= 75) {
-              setRiskLevel('bajo');
-            } else if (total >= 50) {
-              setRiskLevel('moderado');
-            } else {
-              setRiskLevel('alto');
-            }
-          }
+          processResults(allResults);
         } catch (error) {
           console.error("Error al obtener datos de DynamoDB:", error);
           
@@ -293,7 +189,322 @@ export default function ResultadosPage() {
       }
     }
     
+    // Función para procesar los resultados y actualizar el estado
+    const processResults = (allResults) => {
+      if (allResults && allResults.length > 0) {
+        const testIds = new Set<string>()
+        const convertedResults: TestResult[] = []
+        
+        // Procesar resultados por tipo
+        allResults.forEach((result: any) => {
+          // Añadir el tipo a la lista de ejercicios completados
+          testIds.add(result.tipo);
+          console.log(`Procesando resultado de tipo: ${result.tipo}`);
+          
+          // Obtener icono según el tipo
+            let icon;
+            let colorClass;
+            
+            switch (result.tipo) {
+              case "stroop":
+                icon = <Brain className="h-5 w-5" />;
+                colorClass = "bg-purple-600";
+                break;
+              case "lectura":
+                icon = <BookOpen className="h-5 w-5" />;
+                colorClass = "bg-blue-600";
+                break;
+              case "atencion":
+                icon = <Eye className="h-5 w-5" />;
+                colorClass = "bg-green-600";
+                break;
+              case "memoria":
+                icon = <Brain className="h-5 w-5" />;
+                colorClass = "bg-orange-600";
+                break;
+              case "observacion":
+                icon = <Camera className="h-5 w-5" />;
+                colorClass = "bg-indigo-600";
+                break;
+              case "video":
+                icon = <Video className="h-5 w-5" />;
+                colorClass = "bg-pink-600";
+                break;
+              default:
+                icon = <Info className="h-5 w-5" />;
+                colorClass = "bg-gray-600";
+            }
+            
+            // Configurar puntajes y escalas de acuerdo al tipo de ejercicio
+            let rawScore = result.puntuacion;
+            let maxPossibleScore = 100;
+            let scoreDisplay = '';
+            let score = 0;
+            
+            switch (result.tipo) {
+              case "stroop":
+                // Stroop usa puntuaciones directas
+                score = rawScore;
+                scoreDisplay = `${rawScore}/${maxPossibleScore}`;
+                break;
+              case "lectura":
+                // Lectura usa puntuaciones en escala 0-100
+                score = rawScore;
+                scoreDisplay = `${rawScore}/${maxPossibleScore}`;
+                break;
+              case "atencion":
+                // Atención usa puntuaciones en escala 0-100
+                score = rawScore;
+                scoreDisplay = `${rawScore}/${maxPossibleScore}`;
+                break;
+              case "memoria":
+                // Memoria usa el nivel máximo alcanzado como puntuación
+                maxPossibleScore = 10; // Típicamente, el máximo sería 10 niveles
+                rawScore = result.detalles?.nivelMaximo || rawScore;
+                score = normalizeScore(rawScore, maxPossibleScore);
+                scoreDisplay = `${rawScore}/${maxPossibleScore}`;
+                break;
+              case "observacion":
+                // Observación usa número de aciertos sobre total de preguntas
+                maxPossibleScore = result.detalles?.totalPreguntas || 5;
+                rawScore = result.detalles?.aciertos || rawScore;
+                score = normalizeScore(rawScore, maxPossibleScore);
+                scoreDisplay = `${rawScore}/${maxPossibleScore}`;
+                break;
+              case "video":
+                // Video usa puntuaciones en escala 0-100
+                score = rawScore;
+                scoreDisplay = `${rawScore}/${maxPossibleScore}`;
+                break;
+              default:
+                // Para otros tipos de ejercicios
+                score = rawScore;
+                scoreDisplay = `${rawScore}/${maxPossibleScore}`;
+            }
+            
+            // Generar retroalimentación basada en el puntaje
+            const feedback = generateFeedback(result.tipo, score);
+            
+            // Mapear nombres de tipos a nombres más amigables
+            let name;
+            let description;
+            
+            switch (result.tipo) {
+              case "stroop":
+                name = "Test de Stroop";
+                description = "Evaluación de control inhibitorio y atención selectiva";
+                break;
+              case "lectura":
+                name = "Lectura Fluida";
+                description = "Evaluación de fluidez y comprensión lectora";
+                break;
+              case "atencion":
+                name = "Atención Sostenida";
+                description = "Evaluación de la capacidad para mantener la atención durante un periodo prolongado";
+                break;
+              case "memoria":
+                name = "Memoria Visual";
+                description = "Evaluación de memoria de trabajo y recordación visual";
+                break;
+              case "observacion":
+                name = "Atención Visual";
+                description = "Evaluación de la capacidad para detectar detalles visuales";
+                break;
+              case "video":
+                name = "Análisis de Emociones";
+                description = "Evaluación de emociones y expresiones faciales";
+                break;
+              default:
+                name = result.tipo.charAt(0).toUpperCase() + result.tipo.slice(1);
+                description = "Evaluación de habilidades cognitivas";
+            }
+            
+            convertedResults.push({
+              id: result.tipo + "_" + result.timestamp, // Añadir timestamp para hacer el ID único
+              tipo: result.tipo, // Mantener el tipo original para agrupar
+              name: name,
+              score: score,
+              maxScore: 100,
+              description: description,
+              feedback: feedback,
+              icon: icon,
+              colorClass: colorClass,
+              rawScore: rawScore,
+              maxPossibleScore: maxPossibleScore,
+              scoreDisplay: scoreDisplay,
+              detalles: result.detalles, // Guardar todos los detalles para mostrarlos
+              timestamp: result.timestamp // Guardar el timestamp para ordenar
+            });
+        });
+        
+        // Actualizar estado con los resultados convertidos
+        console.log(`Resultados convertidos: ${convertedResults.length}`);
+        
+        // Asegurarse de tener todos los tipos únicos
+        const uniqueTypes = new Set<string>();
+        convertedResults.forEach(result => {
+          if (result.tipo) uniqueTypes.add(result.tipo);
+        });
+        console.log(`Tipos únicos encontrados: ${Array.from(uniqueTypes).join(', ')}`);
+        
+        // Agrupar resultados por tipo y obtener el más reciente de cada tipo
+        const latestByType: Record<string, TestResult> = {};
+        
+        convertedResults.forEach(result => {
+          const tipo = result.tipo || "";
+          if (!latestByType[tipo] || 
+              (result.timestamp && latestByType[tipo].timestamp && 
+               new Date(result.timestamp) > new Date(latestByType[tipo].timestamp))) {
+            latestByType[tipo] = result;
+          }
+        });
+        
+        // Asegurar que tenemos entradas para todos los tipos de ejercicios
+        const tiposCompletos = ["stroop", "lectura", "atencion", "memoria", "observacion", "video"];
+        tiposCompletos.forEach(tipo => {
+          if (!latestByType[tipo]) {
+            // Si falta algún tipo, creamos una tarjeta de ejercicio pendiente con valores por defecto
+            let icon;
+            let colorClass;
+            let name;
+            let description;
+            
+            switch (tipo) {
+              case "stroop":
+                icon = <Brain className="h-5 w-5" />;
+                colorClass = "bg-purple-600";
+                name = "Test de Stroop";
+                description = "Evaluación de control inhibitorio y atención selectiva";
+                break;
+              case "lectura":
+                icon = <BookOpen className="h-5 w-5" />;
+                colorClass = "bg-blue-600";
+                name = "Lectura Fluida";
+                description = "Evaluación de fluidez y comprensión lectora";
+                break;
+              case "atencion":
+                icon = <Eye className="h-5 w-5" />;
+                colorClass = "bg-green-600";
+                name = "Atención Sostenida";
+                description = "Evaluación de la capacidad para mantener la atención durante un periodo prolongado";
+                break;
+              case "memoria":
+                icon = <Brain className="h-5 w-5" />;
+                colorClass = "bg-orange-600";
+                name = "Memoria Visual";
+                description = "Evaluación de memoria de trabajo y recordación visual";
+                break;
+              case "observacion":
+                icon = <Camera className="h-5 w-5" />;
+                colorClass = "bg-indigo-600";
+                name = "Atención Visual";
+                description = "Evaluación de la capacidad para detectar detalles visuales";
+                break;
+              case "video":
+                icon = <Video className="h-5 w-5" />;
+                colorClass = "bg-pink-600";
+                name = "Análisis de Emociones";
+                description = "Evaluación de emociones y expresiones faciales";
+                break;
+              default:
+                icon = <Info className="h-5 w-5" />;
+                colorClass = "bg-gray-600";
+                name = tipo.charAt(0).toUpperCase() + tipo.slice(1);
+                description = "Evaluación de habilidades cognitivas";
+            }
+            
+            latestByType[tipo] = {
+              id: tipo + "_placeholder",
+              tipo: tipo,
+              name: name,
+              score: 0,
+              maxScore: 100,
+              description: description,
+              feedback: "Ejercicio pendiente de realizar",
+              icon: icon,
+              colorClass: colorClass,
+              rawScore: 0,
+              maxPossibleScore: 100,
+              scoreDisplay: "0/100",
+              detalles: null,
+              timestamp: new Date().toISOString()
+            };
+            
+            // No lo añadimos a testIds porque no está realmente completado
+          }
+        });
+        
+        // Convertir a array para mostrar en la UI
+        const filteredLatest = Object.values(latestByType);
+        console.log(`Mostrando ${filteredLatest.length} resultados (más recientes de cada tipo)`);
+        
+        setTestResults(convertedResults); // Todos los resultados
+        setFilteredResults(filteredLatest); // Solo los más recientes de cada tipo
+        setCompletedTests(Array.from(testIds));
+        
+        // Calcular puntuación total (promedio de todos los resultados)
+        if (filteredLatest.length > 0) {
+          const total = filteredLatest.reduce((sum, result) => sum + result.score, 0) / filteredLatest.length;
+          setTotalScore(Math.round(total));
+          
+          // Determinar nivel de riesgo basado en la puntuación total
+          if (total >= 75) {
+            setRiskLevel('bajo');
+          } else if (total >= 50) {
+            setRiskLevel('moderado');
+          } else {
+            setRiskLevel('alto');
+          }
+        }
+      }
+    };
+    
+    // Ejecutar la consulta inicial
     fetchData();
+    
+    // Escuchar el evento de actualización de resultados para refrescar la página sin recargar
+    const handleResultsUpdated = (e: any) => {
+      console.log("🔄 Evento de actualización de resultados recibido");
+      if (e.detail && e.detail.testResultsData) {
+        // Procesar los nuevos resultados obtenidos desde localStorage
+        const testIds = new Set<string>();
+        e.detail.testResultsData.forEach((result: any) => {
+          testIds.add(result.id);
+        });
+        
+        // Actualizar el estado con los nuevos datos
+        setTestResults(e.detail.testResultsData);
+        setFilteredResults(e.detail.testResultsData);
+        setCompletedTests(Array.from(testIds));
+        
+        // Recalcular la puntuación total
+        if (e.detail.testResultsData.length > 0) {
+          const total = e.detail.testResultsData.reduce((sum, result) => sum + result.score, 0) / e.detail.testResultsData.length;
+          setTotalScore(Math.round(total));
+          
+          // Determinar nivel de riesgo basado en la puntuación total
+          if (total >= 75) {
+            setRiskLevel('bajo');
+          } else if (total >= 50) {
+            setRiskLevel('moderado');
+          } else {
+            setRiskLevel('alto');
+          }
+        }
+        
+        console.log("✅ Resultados actualizados en tiempo real");
+      }
+    };
+    
+    // Registrar el listener para el evento personalizado
+    if (typeof window !== 'undefined') {
+      window.addEventListener('resultsDataUpdated', handleResultsUpdated);
+      
+      // Limpieza del listener cuando el componente se desmonte
+      return () => {
+        window.removeEventListener('resultsDataUpdated', handleResultsUpdated);
+      };
+    }
   }, [dynamoDB.isLoading, dynamoDB.userId]);
   
   // Función para cargar datos desde localStorage como respaldo
@@ -442,16 +653,19 @@ export default function ResultadosPage() {
     
     // Convertir a formato para el gráfico
     return Object.values(latestByType).map(result => {
-    // Usar las puntuaciones originales para las barras
-    const originalScore = result.rawScore !== undefined ? result.rawScore : result.score;
-    const maxOriginalScore = result.maxPossibleScore || 100;
-    
-    return {
-      name: result.name,
+      // Usar las puntuaciones originales para las barras
+      const originalScore = result.rawScore !== undefined ? result.rawScore : result.score;
+      const maxOriginalScore = result.maxPossibleScore || 100;
+      
+      return {
+        name: result.name,
         puntuación: completedTests.includes(result.tipo || result.id) ? originalScore : 0,
-      maxPuntuación: maxOriginalScore,
-    };
-  });
+        maxPuntuación: maxOriginalScore,
+        normalizedScore: result.score,
+        tipo: result.tipo || result.id,
+        tooltipDisplay: result.scoreDisplay || `${originalScore}/${maxOriginalScore}`
+      };
+    });
   })();
   
   // Estado para almacenar el nombre del participante
@@ -483,7 +697,7 @@ export default function ResultadosPage() {
 
       <div className="container max-w-full mx-auto px-4 py-6 flex-1">
         <div className="flex flex-col lg:flex-row justify-between items-start gap-6 max-w-7xl mx-auto">
-          <div className="w-full lg:w-2/3 space-y-6" id="report-content">
+          <div className="w-full lg:w-3/4 space-y-6" id="report-content">
             <div className="flex justify-between items-center">
               <h1 className="text-2xl font-bold">Resultados de la evaluación</h1>
               <span className="text-sm text-muted-foreground">{currentDate}</span>
@@ -546,46 +760,71 @@ export default function ResultadosPage() {
                     </div>
                     
                     {/* Gráfico de resultados */}
-                    {filteredResults.length > 0 && (
-                      <div className="h-72 mt-6">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart
-                            data={chartData}
-                            margin={{ top: 20, right: 30, left: 20, bottom: 40 }}
-                          >
-                            <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis 
-                              dataKey="name" 
-                              tick={{ fontSize: 12 }}
-                              angle={-45}
-                              textAnchor="end"
-                              height={70}
-                            />
-                            <YAxis 
-                              domain={[0, 'dataMax']}
-                              allowDecimals={false}
-                            >
-                              <Label
-                                value="Puntuación"
-                                position="insideLeft"
-                                angle={-90}
-                                style={{ textAnchor: 'middle' }}
-                              />
-                            </YAxis>
-                            <Tooltip 
-                              formatter={(value, name, props) => {
-                                return [`${value}/${props.payload.maxPuntuación}`, name];
+                    <Card className="mb-6">
+                      <CardHeader>
+                        <CardTitle>Visión general</CardTitle>
+                        <CardDescription>Resultados por área evaluada</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="h-80">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart
+                              data={chartData}
+                              margin={{
+                                top: 20,
+                                right: 30,
+                                left: 20,
+                                bottom: 70,
                               }}
-                            />
-                            <Bar dataKey="puntuación" name="Tu puntuación">
-                              {chartData.map((entry, index) => (
-                                <Cell key={`cell-${index}`} fill="#3876F4" />
-                              ))}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    )}
+                            >
+                              <CartesianGrid strokeDasharray="3 3" />
+                              <XAxis 
+                                dataKey="name" 
+                                angle={-45} 
+                                textAnchor="end"
+                                height={80}
+                                tickMargin={20}
+                              />
+                              <YAxis>
+                                <Label
+                                  value="Puntuación"
+                                  angle={-90}
+                                  position="insideLeft"
+                                  style={{ textAnchor: 'middle' }}
+                                />
+                              </YAxis>
+                              <Tooltip 
+                                formatter={(value, name, props) => {
+                                  if (name === "puntuación") {
+                                    // Mostrar la puntuación original y normalizada
+                                    const item = props.payload;
+                                    return [`${item.tooltipDisplay} (${item.normalizedScore}/100)`, "Puntuación"]
+                                  }
+                                  return [value, name];
+                                }} 
+                                labelFormatter={(label) => `${label}`}
+                              />
+                              <Bar dataKey="puntuación" name="Puntuación">
+                                {chartData.map((entry, index) => {
+                                  let fillColor;
+                                  // Asignar colores según el tipo
+                                  switch (entry.tipo) {
+                                    case "stroop": fillColor = "#9333ea"; break;
+                                    case "lectura": fillColor = "#2563eb"; break;
+                                    case "atencion": fillColor = "#16a34a"; break;
+                                    case "memoria": fillColor = "#ea580c"; break;
+                                    case "observacion": fillColor = "#4f46e5"; break;
+                                    case "video": fillColor = "#0284c7"; break;
+                                    default: fillColor = "#6b7280";
+                                  }
+                                  return <Cell key={`cell-${index}`} fill={fillColor} />;
+                                })}
+                              </Bar>
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </CardContent>
+                    </Card>
                   </div>
                 ) : (
                   <div className="py-8 text-center">
@@ -633,100 +872,120 @@ export default function ResultadosPage() {
                 
                 <CardContent>
                   <div className="space-y-6">
-                    {/* Agrupar resultados por tipo */}
-                    {(() => {
-                      // Crear un mapa de tipo -> resultados
-                      const resultsByType: Record<string, TestResult[]> = {};
-                      
-                      // Agrupar resultados por tipo
-                      filteredResults.forEach(result => {
-                        const tipo = result.tipo || result.id;
-                        if (!resultsByType[tipo]) {
-                          resultsByType[tipo] = [];
-                        }
-                        resultsByType[tipo].push(result);
-                      });
-                      
-                      // Renderizar por cada tipo
-                      return Object.entries(resultsByType).map(([tipo, resultados]) => {
-                        // Ordenar resultados por fecha (más reciente primero)
-                        resultados.sort((a, b) => {
-                          if (a.timestamp && b.timestamp) {
-                            return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
-                          }
-                          return 0;
-                        });
-                        
-                        // Resultado más reciente
-                        const latestResult = resultados[0];
+                    {/* Lista de resultados de pruebas */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      {filteredResults.map((result) => {
+                        // Verificar si es un placeholder o un resultado real
+                        const isPlaceholder = result.id.includes('_placeholder');
                         
                         return (
-                          <div key={tipo} className="space-y-4">
-                            {/* Encabezado del tipo de prueba */}
-                            <div 
-                              className={`p-4 rounded-lg border ${latestResult.colorClass}`}
-                      >
-                        <div className="flex items-start gap-4">
-                          <div className="p-2 rounded-full bg-white dark:bg-gray-800">
-                                  {latestResult.icon}
-                          </div>
-                          
-                          <div className="flex-1">
-                            <div className="flex items-center justify-between">
-                                    <h3 className="font-medium">{latestResult.name}</h3>
-                                    <span className="text-sm text-white dark:text-white bg-white/20 px-2 py-1 rounded-full">
-                                      {resultados.length} {resultados.length === 1 ? 'intento' : 'intentos'}
-                              </span>
-                                  </div>
-                                  
-                                  <p className="text-sm text-white/90 dark:text-white/90 mt-1">
-                                    {latestResult.description}
-                                  </p>
-                                </div>
+                          <Card key={result.id} className={`overflow-hidden ${isPlaceholder ? 'opacity-60' : ''}`}>
+                            <CardHeader className={`${result.colorClass} text-white p-3 flex flex-row items-center gap-2`}>
+                              <div className="rounded-full bg-white/20 h-6 w-6 flex items-center justify-center">
+                                {result.icon}
                               </div>
-                            </div>
+                              <div>
+                                <CardTitle className="text-md">{result.name}</CardTitle>
+                                <CardDescription className="text-white/80 text-xs">
+                                  {result.description}
+                                </CardDescription>
+                              </div>
+                            </CardHeader>
                             
-                            {/* Listado de todos los intentos */}
-                            <div className="space-y-3 pl-4">
-                              {resultados.map((result, index) => (
-                                <div 
-                                  key={result.id}
-                                  className="p-3 rounded-lg border bg-muted/30"
-                                >
-                                  <div className="flex items-center justify-between">
-                                    <div>
-                                      <h4 className="font-medium">Intento {index + 1}</h4>
-                                      {result.timestamp && (
-                                        <p className="text-xs text-muted-foreground">
-                                          {new Date(result.timestamp).toLocaleString()}
-                                        </p>
-                                      )}
-                                    </div>
-                                    
-                                    <div className="text-right">
-                                      <span className="font-bold">
-                                        {result.rawScore !== undefined && result.maxPossibleScore
-                                          ? `${result.rawScore}/${result.maxPossibleScore}`
-                                          : `${result.score}/${result.maxScore}`}
-                                      </span>
-                                      <p className="text-xs text-muted-foreground">
-                                        {Math.round(result.score)}%
-                                      </p>
-                                    </div>
-                            </div>
-
-                                  <div className="mt-2">
-                                    <p className="text-sm text-muted-foreground">
-                                      {result.feedback}
-                                    </p>
-                                  </div>
+                            <CardContent className="p-3">
+                              {isPlaceholder ? (
+                                <div className="py-2 text-center">
+                                  <p className="text-sm text-muted-foreground">Ejercicio pendiente de realizar</p>
                                 </div>
-                              ))}
-                            </div>
-                          </div>
+                              ) : (
+                                <>
+                                  <div className="flex justify-between items-center mb-2">
+                                    <div className="text-xl font-bold">
+                                      {result.scoreDisplay || `${result.rawScore}/${result.maxPossibleScore}`} 
+                                      <span className="text-xs text-muted-foreground ml-2">
+                                        ({result.score}/100)
+                                      </span>
+                                    </div>
+                                    <TooltipProvider>
+                                      <UITooltip>
+                                        <TooltipTrigger asChild>
+                                          <Info className="h-4 w-4 text-muted-foreground cursor-help" />
+                                        </TooltipTrigger>
+                                        <TooltipContent className="max-w-xs">
+                                          <p>Escala normalizada: {result.score}/100</p>
+                                          <p>Puntuación original: {result.rawScore}/{result.maxPossibleScore}</p>
+                                        </TooltipContent>
+                                      </UITooltip>
+                                    </TooltipProvider>
+                                  </div>
+                                  <p className="text-xs mb-2">{result.feedback}</p>
+                                  
+                                  {/* Detalles adicionales específicos para cada tipo de ejercicio */}
+                                  {result.detalles && (
+                                    <div className="bg-muted/30 p-2 rounded-lg text-xs space-y-0.5">
+                                      <h4 className="font-medium mb-1">Detalles del ejercicio:</h4>
+                                      {result.tipo === "stroop" && (
+                                        <>
+                                          <p>Total de pruebas: {result.detalles.total}</p>
+                                          <p>Porcentaje de aciertos: {result.detalles.porcentajeAciertos}%</p>
+                                          <p>Tiempo de realización: {result.detalles.tiempoTotal}s</p>
+                                        </>
+                                      )}
+                                      
+                                      {result.tipo === "lectura" && (
+                                        <>
+                                          <p>Tiempo de lectura: {result.detalles.tiempoLectura}s</p>
+                                          <p>Emoción detectada: {result.detalles.emocionDetectada}</p>
+                                          <p>Longitud del texto: {result.detalles.longitudTexto} caracteres</p>
+                                        </>
+                                      )}
+                                      
+                                      {result.tipo === "atencion" && (
+                                        <>
+                                          <p>Respuestas correctas: {result.detalles.correctas}</p>
+                                          <p>Errores de comisión: {result.detalles.errorComision}</p>
+                                          <p>Errores de omisión: {result.detalles.errorOmision}</p>
+                                          <p>Tiempo de reacción: {result.detalles.tiempoReaccionMedio}ms</p>
+                                          <p>Nivel alcanzado: {result.detalles.nivelAlcanzado}</p>
+                                        </>
+                                      )}
+                                      
+                                      {result.tipo === "memoria" && (
+                                        <>
+                                          <p>Nivel máximo: {result.detalles.nivelMaximo}</p>
+                                          <p>Secuencia máxima: {result.detalles.secuenciaMaxima} dígitos</p>
+                                          <p>Tiempo total: {result.detalles.tiempoTotal}s</p>
+                                        </>
+                                      )}
+                                      
+                                      {result.tipo === "observacion" && (
+                                        <>
+                                          <p>Preguntas totales: {result.detalles.totalPreguntas}</p>
+                                          <p>Aciertos: {result.detalles.aciertos}</p>
+                                          <p>Porcentaje de aciertos: {result.detalles.porcentajeAciertos}%</p>
+                                          <p>Tiempo total: {result.detalles.tiempoTotal}s</p>
+                                        </>
+                                      )}
+                                      
+                                      {result.tipo === "video" && (
+                                        <>
+                                          <p>Frames capturados: {result.detalles.framesCapturados}</p>
+                                          <p>Frames con rostro: {result.detalles.framesConRostro}</p>
+                                          <p>Porcentaje de atención: {result.detalles.porcentajeAtencion}%</p>
+                                          <p>Tiempo total: {result.detalles.tiempoTotal}s</p>
+                                        </>
+                                      )}
+                                      
+                                      <p className="text-muted-foreground">Fecha: {new Date(result.timestamp).toLocaleString()}</p>
+                                    </div>
+                                  )}
+                                </>
+                              )}
+                            </CardContent>
+                          </Card>
                         );
-                      });
-                    })()}
+                      })}
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -734,7 +993,7 @@ export default function ResultadosPage() {
           </div>
           
           {/* Sidebar con recomendaciones */}
-          <div className="w-full lg:w-1/3 space-y-6">
+          <div className="w-full lg:w-1/4 space-y-6">
             <Card>
               <CardHeader>
                 <CardTitle>Próximos pasos</CardTitle>
