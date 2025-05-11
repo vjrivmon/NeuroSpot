@@ -17,45 +17,56 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { PauseCircle, Check } from "lucide-react"
+import { useLocalAuth } from "../../providers/auth-provider"
+import { useDynamo } from "@/hooks/use-dynamo"
 
 const colors = [
-  { name: "Rojo", value: "#ef4444" },
-  { name: "Azul", value: "#3b82f6" },
-  { name: "Verde", value: "#22c55e" },
-  { name: "Amarillo", value: "#eab308" },
+  { name: "Rojo", value: "#EF4444" },
+  { name: "Verde", value: "#10B981" },
+  { name: "Azul", value: "#3B82F6" },
+  { name: "Amarillo", value: "#F59E0B" },
 ]
 
 export default function StroopTestPage() {
-  const [currentWord, setCurrentWord] = useState({ text: "", color: "" })
+  const [currentWord, setCurrentWord] = useState({
+    text: colors[0].name,
+    color: colors[0].value,
+  })
   const [progress, setProgress] = useState(0)
   const [timeLeft, setTimeLeft] = useState(60)
   const [score, setScore] = useState(0)
   const [total, setTotal] = useState(0)
   const [showDialog, setShowDialog] = useState(false)
   const [testCompleted, setTestCompleted] = useState(false)
+  const [gameStarted, setGameStarted] = useState(true)
+  const [startTime, setStartTime] = useState(Date.now())
   const router = useRouter()
+  const dynamoDB = useDynamo()
 
   useEffect(() => {
-    generateNewWord()
+    if (gameStarted) {
+      setStartTime(Date.now())
+      generateNewWord()
 
-    const timer = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer)
-          completeTest()
-          return 0
-        }
-        return prev - 1
-      })
+      const timer = setInterval(() => {
+        setTimeLeft((prev) => {
+          if (prev <= 1) {
+            clearInterval(timer)
+            completeTest()
+            return 0
+          }
+          return prev - 1
+        })
 
-      setProgress((prev) => {
-        const newProgress = prev + 100 / 60
-        return newProgress > 100 ? 100 : newProgress
-      })
-    }, 1000)
+        setProgress((prev) => {
+          const newProgress = prev + 100 / 60
+          return newProgress > 100 ? 100 : newProgress
+        })
+      }, 1000)
 
-    return () => clearInterval(timer)
-  }, [])
+      return () => clearInterval(timer)
+    }
+  }, [gameStarted])
 
   const generateNewWord = () => {
     const randomWordIndex = Math.floor(Math.random() * colors.length)
@@ -79,22 +90,55 @@ export default function StroopTestPage() {
     generateNewWord()
   }
 
-  const completeTest = () => {
+  const completeTest = async () => {
     setTestCompleted(true)
     
-    // Guardar este ejercicio como completado en localStorage
+    // Calcular la duración del ejercicio
+    const duracionMs = Date.now() - startTime
+    const duracionSeg = Math.round(duracionMs / 1000)
+    
+    // Guardar este ejercicio como completado en localStorage (compatibilidad)
     if (typeof window !== 'undefined') {
       try {
         const saved = localStorage.getItem("completedExercises") 
-        let completedExercises = saved ? JSON.parse(saved) : []
+        const completedExercises = saved ? JSON.parse(saved) : []
         
         if (!completedExercises.includes("stroop")) {
           completedExercises.push("stroop")
           localStorage.setItem("completedExercises", JSON.stringify(completedExercises))
+          console.log("Ejercicio Stroop completado y guardado en localStorage")
         }
       } catch (e) {
         console.error("Error updating completedExercises:", e)
       }
+    }
+    
+    // Guardar los resultados en DynamoDB
+    try {
+      const porcentajeAciertos = total > 0 ? Math.round((score / total) * 100) : 0
+      
+      // Datos del ejercicio a guardar
+      const exerciseData = {
+        tipo: "stroop",
+        puntuacion: score,
+        duracion: duracionSeg,
+        detalles: {
+          total: total,
+          porcentajeAciertos: porcentajeAciertos,
+          tiempoTotal: duracionSeg
+        }
+      }
+      
+      // Guardar en DynamoDB
+      const result = await dynamoDB.saveExerciseResult(exerciseData)
+      
+      if (!result.success) {
+        console.error("Error al guardar resultados en DynamoDB:", result.error)
+      } else {
+        console.log("Resultados guardados correctamente en DynamoDB")
+      }
+    } catch (error) {
+      console.error("Error al procesar resultados:", error)
     }
   }
 
@@ -111,7 +155,13 @@ export default function StroopTestPage() {
           <CardHeader className="pb-4 border-b">
             <div className="flex justify-between items-center">
               <CardTitle className="text-2xl">Test de Stroop</CardTitle>
-              <Button variant="ghost" size="icon" onClick={() => setShowDialog(true)} aria-label="Pausar ejercicio">
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                onClick={() => setShowDialog(true)} 
+                aria-label="Pausar ejercicio"
+                disabled={!gameStarted}
+              >
                 <PauseCircle className="h-6 w-6" />
               </Button>
             </div>
@@ -128,10 +178,35 @@ export default function StroopTestPage() {
             {!testCompleted ? (
               <>
                 <div className="text-center w-full">
-                  <div className="bg-muted/30 p-2 rounded-lg mb-2">
-                    <p className="text-sm text-muted-foreground">
-                      Selecciona el COLOR en que está escrita la palabra, NO lo que dice la palabra.
-                    </p>
+                  <div className="bg-muted/30 p-2 rounded-lg mb-4">
+                    <div className="space-y-3">
+                      <div className="flex items-center">
+                        <div className="w-8 h-8 rounded-full bg-[#3876F4] text-white flex items-center justify-center mr-3 flex-shrink-0">
+                          <span className="font-bold">1</span>
+                        </div>
+                        <p className="text-sm text-muted-foreground text-left">
+                          Selecciona el COLOR en que está escrita la palabra.
+                        </p>
+                      </div>
+                      
+                      <div className="flex items-center">
+                        <div className="w-8 h-8 rounded-full bg-[#3876F4] text-white flex items-center justify-center mr-3 flex-shrink-0">
+                          <span className="font-bold">2</span>
+                        </div>
+                        <p className="text-sm text-muted-foreground text-left">
+                          NO selecciones lo que dice la palabra.
+                        </p>
+                      </div>
+                      
+                      <div className="flex items-center">
+                        <div className="w-8 h-8 rounded-full bg-[#3876F4] text-white flex items-center justify-center mr-3 flex-shrink-0">
+                          <span className="font-bold">3</span>
+                        </div>
+                        <p className="text-sm text-muted-foreground text-left">
+                          Responde lo más rápido posible.
+                        </p>
+                      </div>
+                    </div>
                   </div>
 
                   <div className="flex justify-center items-center my-2">

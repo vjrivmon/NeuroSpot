@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, ReactNode } from "react"
 import { Header } from "@/components/header"
 import { ExerciseCard } from "@/components/exercise-card"
 import { 
@@ -10,11 +10,15 @@ import {
   Clock, 
   Database, 
   Video,
-  LucideIcon
+  LucideIcon,
+  Loader2,
+  X
 } from "lucide-react"
 import Link from "next/link"
-import { Progress } from "@/components/ui/progress"
-import { ReactNode } from "react"
+import { useLocalAuth } from "../providers/auth-provider"
+import { useRouter } from "next/navigation"
+import { Button } from "@/components/ui/button"
+import { ProgressBar } from "@/components/progress-bar"
 
 interface Ejercicio {
   id: string
@@ -29,10 +33,30 @@ interface Ejercicio {
 }
 
 export default function PanelPage() {
+  const localAuth = useLocalAuth()
+  const router = useRouter()
   const [completedExercises, setCompletedExercises] = useState<string[]>([])
   const [progressPercentage, setProgressPercentage] = useState(0)
+  const [isLoading, setIsLoading] = useState(true)
+  const [showSessionMessage, setShowSessionMessage] = useState(true)
+  const [fadeOut, setFadeOut] = useState(false)
+
+  // Función para cerrar sesión
+  const handleLogout = () => {
+    localAuth.logout();
+    router.push("/login");
+  };
 
   useEffect(() => {
+    // Verificar autenticación
+    if (!localAuth.isAuthenticated) {
+      router.push("/login")
+      return
+    }
+    
+    // Si pasa las verificaciones, ya no está cargando
+    setIsLoading(false)
+    
     // Obtener ejercicios completados del localStorage
     if (typeof window !== 'undefined') {
       try {
@@ -41,14 +65,28 @@ export default function PanelPage() {
         setCompletedExercises(completed)
         
         // Calcular porcentaje de progreso
-        const totalExercises = ejercicios.length
         const completedCount = completed.length
-        setProgressPercentage(Math.round((completedCount / totalExercises) * 100))
+        setProgressPercentage(Math.round((completedCount / ejercicios.length) * 100))
       } catch (e) {
         console.error("Error reading completedExercises:", e)
       }
     }
-  }, [])
+    
+    // Iniciar el efecto de desvanecimiento después de 2 segundos
+    const fadeOutTimer = setTimeout(() => {
+      setFadeOut(true)
+    }, 2000)
+    
+    // Ocultar el mensaje después del desvanecimiento completo (1s adicional)
+    const hideTimer = setTimeout(() => {
+      setShowSessionMessage(false)
+    }, 3000)
+    
+    return () => {
+      clearTimeout(fadeOutTimer)
+      clearTimeout(hideTimer)
+    }
+  }, [localAuth.isAuthenticated, router])
 
   const createIconElement = (Icon: LucideIcon): ReactNode => {
     return <Icon />
@@ -123,29 +161,26 @@ export default function PanelPage() {
     }
   ]
 
+  // Mostrar la pantalla de carga mientras se verifica la autenticación
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+        <p className="mt-4 text-lg text-muted-foreground">Cargando...</p>
+      </div>
+    )
+  }
+
   return (
     <main className="min-h-screen flex flex-col">
       <Header showBackButton />
 
-      <div className="container max-w-full mx-auto px-4 py-8 flex-1">
-        <div className="max-w-4xl mx-auto space-y-6">
-          {/* Barra de progreso global */}
-          <div className="bg-blue-50 dark:bg-blue-950 py-4 px-6 border border-blue-200 dark:border-blue-800 rounded-lg">
-            <div className="container max-w-full mx-auto">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-sm font-medium text-blue-800 dark:text-blue-200">Tu progreso</h3>
-                <span className="text-xs text-blue-600 dark:text-blue-300">{progressPercentage}% completado</span>
-              </div>
-              <div className="w-full bg-white dark:bg-gray-800 rounded-full h-2.5 border border-blue-100 dark:border-blue-900">
-                <div 
-                  className="bg-[#3876F4] h-2.5 rounded-full transition-all duration-300 ease-in-out" 
-                  style={{ width: `${progressPercentage}%` }}
-                ></div>
-              </div>
-            </div>
-          </div>
+      <div className="container max-w-full mx-auto p-6 flex-1">
+        {/* Barra de progreso mejorada */}
+        <ProgressBar />
 
-          <h1 className="text-2xl font-bold mb-6 text-center">¡Vamos a realizar algunas pruebas divertidas!</h1>
+        <div className="max-w-7xl mx-auto mt-8">
+          <h1 className="text-2xl font-bold text-center">¡Vamos a realizar algunas pruebas divertidas!</h1>
           
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 w-full">
             {ejercicios.map((ejercicio) => (

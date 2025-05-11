@@ -2,13 +2,26 @@ import type React from "react"
 import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import "./globals.css"
-import { ThemeProvider } from "@/components/theme-provider"
+import { config } from '@fortawesome/fontawesome-svg-core'
+import '@fortawesome/fontawesome-svg-core/styles.css'
+import { library } from '@fortawesome/fontawesome-svg-core'
+import { faGoogle, faApple } from '@fortawesome/free-brands-svg-icons'
+import { faFingerprint } from '@fortawesome/free-solid-svg-icons'
+import { faFaceSmile } from '@fortawesome/free-regular-svg-icons'
+import AuthProvider from "./providers/auth-provider"
+import ThemeProvider from "./providers/theme-provider"
 
 const inter = Inter({ 
   subsets: ["latin"],
   display: 'swap',
   preload: false
 })
+
+// Prevent Font Awesome from adding its CSS since we did it manually above
+config.autoAddCss = false
+
+// Add icons to the library
+library.add(faGoogle, faApple, faFingerprint, faFaceSmile)
 
 export const metadata: Metadata = {
   title: "NeuroSpot - Evaluación interactiva para niños",
@@ -33,9 +46,11 @@ export default function RootLayout({
         <link rel="icon" href="/logo.svg" type="image/svg+xml" />
       </head>
       <body className={inter.className}>
-        <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
-          {children}
-        </ThemeProvider>
+        <AuthProvider>
+          <ThemeProvider>
+            {children}
+          </ThemeProvider>
+        </AuthProvider>
       </body>
     </html>
   )
