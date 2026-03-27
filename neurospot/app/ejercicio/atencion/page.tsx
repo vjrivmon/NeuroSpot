@@ -25,6 +25,9 @@ type ResultsType = {
   commissionErrors: number; // Presionó cuando no debía (impulsividad)
   omissionErrors: number;   // No presionó cuando debía (inatención)
   reactionTimes: number[];
+  // Marcadores TDAH inatento
+  reactionTimeVariability: number; // Desviación estándar de tiempos de reacción (ms)
+  omissionRate: number;            // omisionErrors / total targets objetivo (0-1)
 }
 
 type LevelType = {
@@ -52,7 +55,9 @@ export default function AtencionPage() {
     correctResponses: 0,
     commissionErrors: 0,
     omissionErrors: 0,
-    reactionTimes: []
+    reactionTimes: [] as number[],
+    reactionTimeVariability: 0,
+    omissionRate: 0,
   })
   const [stimulusStartTime, setStimulusStartTime] = useState<number | null>(null)
   const [targetLetter] = useState('X')
@@ -215,7 +220,9 @@ export default function AtencionPage() {
       correctResponses: 0,
       commissionErrors: 0,
       omissionErrors: 0,
-      reactionTimes: []
+      reactionTimes: [] as number[],
+      reactionTimeVariability: 0,
+      omissionRate: 0,
     })
     setStartTime(Date.now())
     
@@ -375,6 +382,16 @@ export default function AtencionPage() {
     const medianReactionTime = results.reactionTimes.length > 0 
       ? calculateMedian(results.reactionTimes) 
       : 0
+
+    // Marcadores TDAH inatento: VTR y omission rate
+    const vtr = results.reactionTimes.length > 1
+      ? Math.sqrt(
+          results.reactionTimes.reduce((acc, t) => acc + Math.pow(t - avgReactionTime, 2), 0)
+          / results.reactionTimes.length
+        )
+      : 0
+    const totalTargets = results.correctResponses + results.omissionErrors
+    const omissionRate = totalTargets > 0 ? results.omissionErrors / totalTargets : 0
     
     // Guardar los resultados en DynamoDB
     try {
@@ -410,7 +427,11 @@ export default function AtencionPage() {
           tiempoReaccionMedio: Math.round(avgReactionTime),
           tiempoReaccionMediana: Math.round(medianReactionTime),
           nivelAlcanzado: currentLevel + 1,
-          tiempoTotal: durationInSec
+          tiempoTotal: durationInSec,
+          // Marcadores TDAH inatento
+          variabilidadTiempoReaccion: Math.round(vtr),
+          tasaOmision: Math.round(omissionRate * 100) / 100,
+          consistenciaAtencional: vtr < 150 ? "alta" : vtr < 300 ? "media" : "baja"
         }
       }
       
@@ -553,14 +574,30 @@ export default function AtencionPage() {
                   <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
                   <div>
                     <AlertTitle className="text-green-800 dark:text-green-300">¡Prueba completada!</AlertTitle>
-                    <AlertDescription className="text-green-700 dark:text-green-400 text-sm">
-                      Aciertos: {results.correctResponses}<br />
-                      Errores: {results.commissionErrors + results.omissionErrors}<br />
-                      Tiempo de reacción promedio: {
+                    <AlertDescription className="text-green-700 dark:text-green-400 text-sm space-y-1">
+                      <div>✅ Aciertos: <strong>{results.correctResponses}</strong></div>
+                      <div>❌ Errores: <strong>{results.commissionErrors + results.omissionErrors}</strong></div>
+                      <div>⏱️ Tiempo de reacción: <strong>{
                         results.reactionTimes.length > 0 
                           ? `${Math.round(results.reactionTimes.reduce((a, b) => a + b, 0) / results.reactionTimes.length)} ms` 
                           : "N/A"
-                      }
+                      }</strong></div>
+                      {(() => {
+                        const avg = results.reactionTimes.length > 0
+                          ? results.reactionTimes.reduce((a,b) => a+b, 0) / results.reactionTimes.length : 0
+                        const vtr = results.reactionTimes.length > 1
+                          ? Math.sqrt(results.reactionTimes.reduce((acc,t) => acc + Math.pow(t-avg,2), 0) / results.reactionTimes.length)
+                          : 0
+                        const totalT = results.correctResponses + results.omissionErrors
+                        const omRate = totalT > 0 ? Math.round((results.omissionErrors / totalT) * 100) : 0
+                        const consistencia = vtr < 150 ? "🟢 Alta" : vtr < 300 ? "🟡 Media" : "🔴 Baja"
+                        return (
+                          <>
+                            <div>🎯 Consistencia atencional: <strong>{consistencia}</strong></div>
+                            <div>👁️ Estímulos perdidos: <strong>{omRate}%</strong></div>
+                          </>
+                        )
+                      })()}
                     </AlertDescription>
                   </div>
                 </Alert>

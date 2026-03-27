@@ -1,10 +1,9 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { Header } from "@/components/header"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Progress } from "@/components/ui/progress"
 import { useRouter } from "next/navigation"
 import {
   AlertDialog,
@@ -16,337 +15,358 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { PauseCircle, ArrowRight } from "lucide-react"
-import Image from "next/image"
-import { useMediaQuery } from "@/hooks/use-media-query"
+import { PauseCircle, CheckCircle2 } from "lucide-react"
 import { useDynamo } from "@/hooks/use-dynamo"
 
-// Definición de tipos para las preguntas
-type Question = {
-  image: string;
-  question: string;
-  options: string[];
-  correctAnswer: number;
+// Símbolos del juego
+const SYMBOLS = ["⭐", "🔵", "🟥", "🌙", "🔺"]
+const GAME_DURATION = 90 // segundos
+const COLS_MOBILE = 6
+const COLS_TABLET = 7
+const ROWS = 8
+const TARGET_RATIO = 0.30 // 30% de los items son targets
+
+type ItemState = "idle" | "found" | "error"
+
+interface GridItem {
+  id: number
+  symbol: string
+  isTarget: boolean
+  state: ItemState
+  tappedAt?: number
 }
 
-export default function ObservacionPage() {
-  const isMobile = useMediaQuery("(max-width: 768px)")
-  
-  // Función para obtener la ruta de imagen correcta según el tamaño de pantalla
-  const getImagePath = (index: number) => {
-    return isMobile 
-      ? `/ejercicios/observacion/mobile/imagen${index}.jpg` 
-      : `/ejercicios/observacion/imagen${index}.jpg`
-  }
-  
-  // Preguntas para el ejercicio de observación
-  const questions: Question[] = [
-    {
-      image: getImagePath(1),
-      question: "¿Cuántos objetos circulares hay en la imagen?",
-      options: ["3", "4", "5", "6"],
-      correctAnswer: 2
-    },
-    {
-      image: getImagePath(2),
-      question: "¿Qué color predomina en la esquina superior derecha?",
-      options: ["Azul", "Verde", "Rojo", "Amarillo"],
-      correctAnswer: 0
-    },
-    {
-      image: getImagePath(3),
-      question: "¿Cuántas personas aparecen en la imagen?",
-      options: ["Ninguna", "1", "2", "3 o más"],
-      correctAnswer: 2
-    },
-    {
-      image: getImagePath(4),
-      question: "¿Qué elemento está fuera de lugar en esta imagen?",
-      options: ["El reloj", "El libro", "La planta", "El vaso"],
-      correctAnswer: 3
-    },
-    {
-      image: getImagePath(5),
-      question: "¿Cuántos elementos de color rojo hay en la imagen?",
-      options: ["Ninguno", "1", "2", "3"],
-      correctAnswer: 2
-    }
-  ];
+interface CancelacionResults {
+  totalTargets: number
+  targetsFound: number
+  omissionErrors: number
+  commissionErrors: number
+  omissionRate: number
+  commissionRate: number
+  timeToComplete: number
+  itemLatencies: number[]
+  reactionTimeVariability: number
+}
 
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
-  const [selectedOption, setSelectedOption] = useState<number | null>(null)
-  const [showAnswer, setShowAnswer] = useState(false)
-  const [timeLeft, setTimeLeft] = useState(30) // 30 segundos por pregunta
-  const [progress, setProgress] = useState(0)
-  const [score, setScore] = useState(0)
-  const [showDialog, setShowDialog] = useState(false)
-  const [completed, setCompleted] = useState(false)
+function buildGrid(cols: number, rows: number, targetSymbol: string): GridItem[] {
+  const total = cols * rows
+  const numTargets = Math.round(total * TARGET_RATIO)
+  const items: GridItem[] = []
+
+  for (let i = 0; i < total; i++) {
+    items.push({
+      id: i,
+      symbol: SYMBOLS.filter(s => s !== targetSymbol)[Math.floor(Math.random() * (SYMBOLS.length - 1))],
+      isTarget: false,
+      state: "idle",
+    })
+  }
+
+  // Insertar targets en posiciones aleatorias
+  const targetPositions = new Set<number>()
+  while (targetPositions.size < numTargets) {
+    targetPositions.add(Math.floor(Math.random() * total))
+  }
+  targetPositions.forEach(pos => {
+    items[pos] = { ...items[pos], symbol: targetSymbol, isTarget: true }
+  })
+
+  return items
+}
+
+export default function CancelacionVisualPage() {
   const router = useRouter()
-  const [startTime, setStartTime] = useState<number>(Date.now())
   const dynamo = useDynamo()
 
-  // Temporizador para cada pregunta
-  useEffect(() => {
-    if (showAnswer || completed) return
+  const [gameStarted, setGameStarted] = useState(false)
+  const [gamePaused, setGamePaused] = useState(false)
+  const [gameFinished, setGameFinished] = useState(false)
+  const [showDialog, setShowDialog] = useState(false)
+  const [timeLeft, setTimeLeft] = useState(GAME_DURATION)
+  const [targetSymbol] = useState(() => SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)])
+  const [cols, setCols] = useState(COLS_TABLET)
+  const [grid, setGrid] = useState<GridItem[]>([])
+  const [results, setResults] = useState<CancelacionResults | null>(null)
+  const [lastTapTime, setLastTapTime] = useState<number | null>(null)
+  const [itemLatencies, setItemLatencies] = useState<number[]>([])
+  const [commissionErrors, setCommissionErrors] = useState(0)
+  const [startTime, setStartTime] = useState(0)
 
-    const timer = setInterval(() => {
+  const timerRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Detectar columnas según ancho de pantalla
+  useEffect(() => {
+    const updateCols = () => setCols(window.innerWidth < 600 ? COLS_MOBILE : COLS_TABLET)
+    updateCols()
+    window.addEventListener("resize", updateCols)
+    return () => window.removeEventListener("resize", updateCols)
+  }, [])
+
+  // Construir grid cuando se conocen las columnas
+  useEffect(() => {
+    if (cols > 0) setGrid(buildGrid(cols, ROWS, targetSymbol))
+  }, [cols, targetSymbol])
+
+  // Timer principal
+  useEffect(() => {
+    if (!gameStarted || gamePaused || gameFinished) return
+    timerRef.current = setInterval(() => {
       setTimeLeft(prev => {
         if (prev <= 1) {
-          clearInterval(timer)
-          // Si el tiempo se acaba y no ha seleccionado respuesta, mostrar la respuesta correcta
-          if (selectedOption === null) {
-            setShowAnswer(true)
-          }
+          finishGame()
           return 0
         }
-        setProgress(prev => {
-          const newProgress = 100 - ((prev - 1) / 30) * 100
-          return newProgress > 100 ? 100 : newProgress
-        })
         return prev - 1
       })
     }, 1000)
+    return () => { if (timerRef.current) clearInterval(timerRef.current) }
+  }, [gameStarted, gamePaused, gameFinished])
 
-    return () => clearInterval(timer)
-  }, [showAnswer, selectedOption, completed])
+  const finishGame = useCallback(() => {
+    if (timerRef.current) clearInterval(timerRef.current)
+    setGameFinished(true)
+  }, [])
 
-  // Manejar la selección de una opción
-  const handleOptionSelect = (optionIndex: number) => {
-    if (showAnswer || selectedOption !== null) return
-    
-    setSelectedOption(optionIndex)
-    setShowAnswer(true)
-    
-    // Sumar punto si la respuesta es correcta
-    if (optionIndex === questions[currentQuestionIndex].correctAnswer) {
-      setScore(prev => prev + 1)
-    }
+  const handleStart = () => {
+    setGameStarted(true)
+    setStartTime(Date.now())
   }
 
-  // Pasar a la siguiente pregunta
-  const handleNextQuestion = () => {
-    if (currentQuestionIndex < questions.length - 1) {
-      setCurrentQuestionIndex(prev => prev + 1)
-      setSelectedOption(null)
-      setShowAnswer(false)
-      setTimeLeft(30)
-      setProgress(0)
+  const handleTap = useCallback((item: GridItem) => {
+    if (!gameStarted || gamePaused || gameFinished || item.state !== "idle") return
+
+    const now = Date.now()
+    if (lastTapTime !== null) {
+      setItemLatencies(prev => [...prev, now - lastTapTime])
+    }
+    setLastTapTime(now)
+
+    if (item.isTarget) {
+      setGrid(prev => prev.map(g => g.id === item.id ? { ...g, state: "found", tappedAt: now } : g))
     } else {
-      // Ha terminado todas las preguntas
-      setCompleted(true)
+      setCommissionErrors(prev => prev + 1)
+      setGrid(prev => prev.map(g => g.id === item.id ? { ...g, state: "error" } : g))
+      // Resetear error visual tras 600ms
+      setTimeout(() => {
+        setGrid(prev => prev.map(g => g.id === item.id ? { ...g, state: "idle" } : g))
+      }, 600)
     }
-  }
+  }, [gameStarted, gamePaused, gameFinished, lastTapTime])
 
-  // Completar el ejercicio y pasar a resultados
-  const completeExercise = async () => {
-    const endTime = Date.now();
-    const durationInMs = endTime - startTime;
-    const durationInSec = Math.floor(durationInMs / 1000);
-    
-    // Guardar este ejercicio como completado en localStorage
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = localStorage.getItem("completedExercises") 
-        const completedExercises = saved ? JSON.parse(saved) : []
-        
-        if (!completedExercises.includes("observacion")) {
-          completedExercises.push("observacion")
-          localStorage.setItem("completedExercises", JSON.stringify(completedExercises))
-          console.log("Ejercicio de Observación completado y guardado en localStorage")
-        }
-        
-        // Guardar el resultado del ejercicio en testResultsData
-        const observacionResult = {
-          id: "observacion",
-          name: "Ejercicio de Observación",
-          score: score,  // Puntuación obtenida en el ejercicio
-          maxScore: 100,
-          description: "Evalúa la capacidad de atención a detalles visuales.",
-          feedback: `Has acertado ${score} de ${questions.length} preguntas. ${
-            score >= 4 ? "Excelente atención al detalle visual." : 
-            score >= 2 ? "Buena atención al detalle con algunas dificultades." : 
-            "Se recomienda practicar ejercicios de atención visual."
-          }`,
-          date: new Date().toISOString()
-        };
-        
-        // Actualizar testResultsData
-        try {
-          const savedResultsData = localStorage.getItem("testResultsData");
-          let resultsData = savedResultsData ? JSON.parse(savedResultsData) : [];
-          
-          // Buscar si ya existe un resultado para este test
-          const existingIndex = resultsData.findIndex((test: any) => test.id === "observacion");
-          
-          if (existingIndex >= 0) {
-            // Actualizar el resultado existente
-            resultsData[existingIndex] = observacionResult;
-          } else {
-            // Añadir el nuevo resultado
-            resultsData.push(observacionResult);
-          }
-          
-          // Guardar los resultados actualizados
-          localStorage.setItem("testResultsData", JSON.stringify(resultsData));
-          console.log("Resultados guardados en localStorage", observacionResult);
-        } catch (e) {
-          console.error("Error updating testResultsData:", e);
-        }
-      } catch (e) {
-        console.error("Error updating completedExercises:", e)
-      }
+  // Calcular y guardar resultados cuando termina
+  useEffect(() => {
+    if (!gameFinished || grid.length === 0) return
+
+    const totalTargets = grid.filter(g => g.isTarget).length
+    const targetsFound = grid.filter(g => g.isTarget && g.state === "found").length
+    const omissionErrors = totalTargets - targetsFound
+    const totalDistractors = grid.filter(g => !g.isTarget).length
+    const omissionRate = totalTargets > 0 ? omissionErrors / totalTargets : 0
+    const commissionRate = totalDistractors > 0 ? commissionErrors / totalDistractors : 0
+    const timeToComplete = Date.now() - startTime
+
+    const avg = itemLatencies.length > 0
+      ? itemLatencies.reduce((a, b) => a + b, 0) / itemLatencies.length : 0
+    const vtr = itemLatencies.length > 1
+      ? Math.sqrt(itemLatencies.reduce((acc, t) => acc + Math.pow(t - avg, 2), 0) / itemLatencies.length)
+      : 0
+
+    const finalResults: CancelacionResults = {
+      totalTargets,
+      targetsFound,
+      omissionErrors,
+      commissionErrors,
+      omissionRate: Math.round(omissionRate * 100) / 100,
+      commissionRate: Math.round(commissionRate * 100) / 100,
+      timeToComplete,
+      itemLatencies,
+      reactionTimeVariability: Math.round(vtr),
     }
-    
-    // Guardar los resultados en DynamoDB
+    setResults(finalResults)
+
+    // Guardar en DynamoDB
+    const puntuacion = Math.max(0, Math.round(
+      100 - (omissionErrors * 3) - (commissionErrors * 2)
+    ))
+    dynamo.saveExerciseResult({
+      tipo: "cancelacion_visual",
+      puntuacion,
+      duracion: Math.floor(timeToComplete / 1000),
+      detalles: {
+        ...finalResults,
+        simboloObjetivo: targetSymbol,
+        tasaOmisionPct: Math.round(omissionRate * 100),
+        consistenciaAtencional: vtr < 200 ? "alta" : vtr < 400 ? "media" : "baja",
+      }
+    }).catch(console.error)
+
+    // Marcar como completado
     try {
-      // Calcular porcentaje de aciertos
-      const aciertosPercent = (score / questions.length) * 100;
-      
-      // Mapear ese porcentaje a una puntuación de 0-100
-      const puntuacionFinal = Math.round(aciertosPercent);
-      
-      // Datos del ejercicio a guardar
-      const exerciseData = {
-        tipo: "observacion",
-        puntuacion: puntuacionFinal,
-        duracion: durationInSec,
-        detalles: {
-          totalPreguntas: questions.length,
-          aciertos: score,
-          porcentajeAciertos: Math.round(aciertosPercent),
-          tiempoTotal: durationInSec
-        }
+      const completed = JSON.parse(localStorage.getItem("completedExercises") || "[]")
+      if (!completed.includes("observacion")) {
+        completed.push("observacion")
+        localStorage.setItem("completedExercises", JSON.stringify(completed))
       }
-      
-      // Guardar en DynamoDB
-      const result = await dynamo.saveExerciseResult(exerciseData)
-      
-      if (!result.success) {
-        console.error("Error al guardar resultados en DynamoDB:", result.error)
-      } else {
-        console.log("Resultados de Observación guardados correctamente en DynamoDB:", exerciseData)
-      }
-    } catch (error) {
-      console.error("Error al procesar resultados de observación:", error)
-    }
-    
-    router.push("/ejercicio/video");
-  }
+    } catch (_) {}
+  }, [gameFinished])
+
+  const handleContinue = () => router.push("/ejercicio/stroop")
+
+  const totalTargets = grid.filter(g => g.isTarget).length
+  const targetsFound = grid.filter(g => g.isTarget && g.state === "found").length
+  const timerPct = (timeLeft / GAME_DURATION) * 100
+  const timerColor = timeLeft > 30 ? "#3876F4" : timeLeft > 10 ? "#f59e0b" : "#ef4444"
 
   return (
-    <main className="min-h-screen flex flex-col">
-      <Header showBackButton />
-
-      <div className="container max-w-full mx-auto px-0 md:px-4 py-8 flex-1 flex flex-col">
-        <Card className="border-none shadow-lg flex-1 flex flex-col w-full mx-auto">
-          <CardHeader className="pb-4 border-b px-6">
-            <div className="flex justify-between items-center">
-              <CardTitle className="text-2xl">Ejercicio de Observación</CardTitle>
-              <Button variant="ghost" size="icon" onClick={() => setShowDialog(true)} aria-label="Pausar ejercicio">
-                <PauseCircle className="h-6 w-6" />
-              </Button>
-            </div>
-            <div className="flex justify-between text-sm text-muted-foreground">
-              <span>Tiempo: {timeLeft}s</span>
-              <span>
-                Puntuación: {score}/{questions.length}
-              </span>
-            </div>
-            <Progress value={progress} className="h-2" />
-          </CardHeader>
-
-          <CardContent className="p-4 md:p-6 flex flex-col items-center justify-center w-full">
-            {!completed ? (
-              <>
-                <div className="space-y-6 text-center w-full">
-                  {/* Contenedor de la imagen con altura fija pero ancho adaptable */}
-                  <div className="relative w-full h-48 sm:h-64 md:h-80 lg:h-96 bg-white rounded-lg overflow-hidden mx-auto max-w-5xl">
-                    <div className="absolute inset-0 flex items-center justify-center text-muted-foreground">
-                      <span>Cargando imagen...</span>
-                    </div>
-                    <Image 
-                      src={questions[currentQuestionIndex].image} 
-                      alt={`Imagen para observación ${currentQuestionIndex + 1}`}
-                      fill
-                      style={{ 
-                        objectFit: "contain", 
-                        backgroundColor: "white" 
-                      }}
-                      sizes="(max-width: 768px) 100vw, (max-width: 1200px) 80vw, 1200px"
-                      priority
-                    />
-                  </div>
-
-                  <div className="bg-muted/30 p-4 rounded-lg max-w-4xl mx-auto w-full">
-                    <p className="text-base font-medium">
-                      {questions[currentQuestionIndex].question}
-                    </p>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-w-4xl mx-auto w-full">
-                    {questions[currentQuestionIndex].options.map((option, index) => (
-                      <Button
-                        key={index}
-                        className={`h-12 justify-start px-4 ${
-                          showAnswer 
-                            ? index === questions[currentQuestionIndex].correctAnswer 
-                              ? "bg-green-500 hover:bg-green-500 text-white" 
-                              : selectedOption === index 
-                                ? "bg-red-500 hover:bg-red-500 text-white" 
-                                : "bg-muted hover:bg-muted text-muted-foreground"
-                            : "bg-[#3876F4] hover:bg-[#3876F4]/90 text-white"
-                        }`}
-                        onClick={() => handleOptionSelect(index)}
-                        disabled={showAnswer}
-                      >
-                        {option}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-
-                {showAnswer && (
-                  <Button 
-                    className="w-full max-w-4xl h-14 text-white font-medium mt-6 bg-[#3876F4] hover:bg-[#3876F4]/90"
-                    onClick={handleNextQuestion}
-                  >
-                    {currentQuestionIndex < questions.length - 1 ? "Siguiente pregunta" : "Ver resultados"}
-                  </Button>
-                )}
-              </>
-            ) : (
-              <div className="flex-1 flex flex-col justify-center items-center space-y-6 w-full">
-                <div className="text-center max-w-4xl w-full">
-                  <h2 className="text-2xl font-bold mb-3">¡Ejercicio completado!</h2>
-                  <p className="text-muted-foreground mb-6">
-                    Has respondido correctamente {score} de {questions.length} preguntas.
-                  </p>
-                  
-                  <Button 
-                    className="w-full h-14 text-white font-medium bg-[#3876F4] hover:bg-[#3876F4]/90"
-                    onClick={completeExercise}
-                  >
-                    <ArrowRight className="mr-2 h-4 w-4" /> Siguiente ejercicio
-                  </Button>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+    <div className="min-h-screen bg-background flex flex-col">
+      <Header />
 
       <AlertDialog open={showDialog} onOpenChange={setShowDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>¿Deseas abandonar el ejercicio?</AlertDialogTitle>
-            <AlertDialogDescription>Si abandonas ahora, perderás el progreso actual.</AlertDialogDescription>
+            <AlertDialogTitle>¿Salir del ejercicio?</AlertDialogTitle>
+            <AlertDialogDescription>Perderás tu progreso actual.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Continuar ejercicio</AlertDialogCancel>
-            <AlertDialogAction onClick={() => router.push("/panel")}>Abandonar</AlertDialogAction>
+            <AlertDialogCancel onClick={() => { setShowDialog(false); setGamePaused(false) }}>Continuar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => router.push("/panel")}>Salir</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </main>
+
+      <main className="flex-1 flex flex-col items-center px-3 py-4 gap-4 max-w-2xl mx-auto w-full">
+
+        {/* Header del juego */}
+        <Card className="w-full">
+          <CardContent className="pt-4 pb-3">
+            <div className="flex items-center justify-between gap-3">
+              {/* Objetivo */}
+              <div className="flex flex-col items-center gap-1">
+                <span className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Busca</span>
+                <span className="text-5xl leading-none select-none">{targetSymbol}</span>
+              </div>
+
+              {/* Timer circular */}
+              <div className="flex flex-col items-center gap-1">
+                <svg width="64" height="64" viewBox="0 0 64 64">
+                  <circle cx="32" cy="32" r="28" fill="none" stroke="#e5e7eb" strokeWidth="6" />
+                  <circle
+                    cx="32" cy="32" r="28" fill="none"
+                    stroke={timerColor} strokeWidth="6"
+                    strokeDasharray={`${2 * Math.PI * 28}`}
+                    strokeDashoffset={`${2 * Math.PI * 28 * (1 - timerPct / 100)}`}
+                    strokeLinecap="round"
+                    transform="rotate(-90 32 32)"
+                    style={{ transition: "stroke-dashoffset 1s linear, stroke 0.3s" }}
+                  />
+                  <text x="32" y="37" textAnchor="middle" fontSize="16" fontWeight="bold" fill={timerColor}>{timeLeft}</text>
+                </svg>
+                <span className="text-xs text-muted-foreground">seg</span>
+              </div>
+
+              {/* Progreso */}
+              <div className="flex flex-col items-center gap-1">
+                <span className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Encontrados</span>
+                <span className="text-3xl font-bold text-[#3876F4]">{targetsFound}</span>
+                <span className="text-xs text-muted-foreground">de {totalTargets}</span>
+              </div>
+
+              {/* Pausa */}
+              {gameStarted && !gameFinished && (
+                <button
+                  className="p-2 rounded-lg text-muted-foreground hover:text-foreground active:scale-95"
+                  onClick={() => { setGamePaused(p => !p); if (!gamePaused) setShowDialog(true) }}
+                >
+                  <PauseCircle className="w-7 h-7" />
+                </button>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Instrucción */}
+        {!gameStarted && (
+          <div className="text-center space-y-3 px-2">
+            <p className="text-lg font-semibold">Toca todos los <span className="text-3xl">{targetSymbol}</span> que veas</p>
+            <p className="text-sm text-muted-foreground">Hazlo lo más rápido que puedas. ¡No toques los otros!</p>
+            <Button
+              className="w-full h-14 text-lg font-semibold bg-[#3876F4] hover:bg-[#3876F4]/90 text-white"
+              onClick={handleStart}
+            >
+              ¡Empezar!
+            </Button>
+          </div>
+        )}
+
+        {/* Grid de juego */}
+        {gameStarted && !gameFinished && (
+          <div
+            className="w-full grid gap-1.5 select-none"
+            style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}
+          >
+            {grid.map(item => (
+              <button
+                key={item.id}
+                className={`
+                  flex items-center justify-center rounded-lg text-2xl
+                  transition-all duration-150 active:scale-90
+                  min-h-[44px] aspect-square
+                  ${item.state === "found"
+                    ? "bg-green-100 dark:bg-green-900/30 opacity-40 scale-90"
+                    : item.state === "error"
+                    ? "bg-red-100 dark:bg-red-900/30 scale-95"
+                    : "bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  }
+                `}
+                onClick={() => handleTap(item)}
+                disabled={item.state === "found"}
+              >
+                {item.state === "found" ? "✓" : item.symbol}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Pantalla de resultados */}
+        {gameFinished && results && (
+          <Card className="w-full">
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-green-700 dark:text-green-400">
+                <CheckCircle2 className="w-6 h-6" />
+                ¡Ejercicio completado!
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-3 text-center">
+                  <div className="text-3xl font-bold text-green-700 dark:text-green-400">{results.targetsFound}</div>
+                  <div className="text-xs text-muted-foreground mt-1">de {results.totalTargets} encontrados</div>
+                </div>
+                <div className="bg-red-50 dark:bg-red-900/20 rounded-lg p-3 text-center">
+                  <div className="text-3xl font-bold text-red-600 dark:text-red-400">{results.omissionErrors}</div>
+                  <div className="text-xs text-muted-foreground mt-1">perdidos</div>
+                </div>
+                <div className="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-3 text-center">
+                  <div className="text-3xl font-bold text-orange-600 dark:text-orange-400">{results.commissionErrors}</div>
+                  <div className="text-xs text-muted-foreground mt-1">errores</div>
+                </div>
+                <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 text-center">
+                  <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                    {results.reactionTimeVariability < 200 ? "🟢" : results.reactionTimeVariability < 400 ? "🟡" : "🔴"}
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-1">consistencia</div>
+                </div>
+              </div>
+              <Button
+                className="w-full h-14 text-lg font-semibold bg-[#3876F4] hover:bg-[#3876F4]/90 text-white"
+                onClick={handleContinue}
+              >
+                Continuar →
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+      </main>
+    </div>
   )
-} 
+}

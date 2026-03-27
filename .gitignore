@@ -1,2 +1,22 @@
-*.json
-node_modules
+# Dependencies
+node_modules/
+neurospot/node_modules/
+
+# Build outputs
+.next/
+neurospot/.next/
+dist/
+build/
+
+# Environment
+.env
+.env.local
+.env*.local
+
+# OS
+.DS_Store
+*.log
+
+# SSH/config (never commit these)
+~/.gitconfig
+~/.ssh/

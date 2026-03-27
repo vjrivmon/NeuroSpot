@@ -19,10 +19,12 @@ import {
 import { PauseCircle, ArrowRight } from "lucide-react"
 import { useDynamo } from "@/hooks/use-dynamo"
 
-type MemoryStep = "instructions" | "sequence" | "input" | "result" | "completed"
+type MemoryStep = "instructions" | "sequence" | "input" | "result" | "completed" | "phase_transition"
+type MemoryPhase = "forward" | "backward"
 
 export default function MemoriaPage() {
   const [step, setStep] = useState<MemoryStep>("instructions")
+  const [phase, setPhase] = useState<MemoryPhase>("forward")
   const [sequence, setSequence] = useState<number[]>([])
   const [userInput, setUserInput] = useState<number[]>([])
   const [level, setLevel] = useState(2) // Empezamos con secuencias de 2 números
@@ -30,6 +32,9 @@ export default function MemoriaPage() {
   const [progress, setProgress] = useState(0)
   const [result, setResult] = useState<"correct" | "incorrect" | null>(null)
   const [maxLevel, setMaxLevel] = useState(2)
+  // Span máximo por fase (marcadores TDAH inatento)
+  const [forwardSpan, setForwardSpan] = useState(0)
+  const [backwardSpan, setBackwardSpan] = useState(0)
   const [startTime, setStartTime] = useState<number>(0)
   const router = useRouter()
   const dynamo = useDynamo()
@@ -42,7 +47,7 @@ export default function MemoriaPage() {
     }
     setSequence(newSequence)
     setUserInput([])
-    setResult("")
+    setResult(null)
     setStartTime(Date.now())
     
     // Mostrar los números secuencialmente
@@ -97,30 +102,42 @@ export default function MemoriaPage() {
     }
   }
 
-  // Comprueba si la secuencia inversa es correcta
+  // Comprueba la respuesta según la fase actual
   const checkAnswer = (input: number[]) => {
-    // Compara la entrada del usuario con la secuencia invertida
-    const reversedSequence = [...sequence].reverse()
-    const isCorrect = reversedSequence.every((num, index) => num === input[index])
+    const expected = phase === "forward"
+      ? [...sequence]
+      : [...sequence].reverse()
+    const isCorrect = expected.every((num, index) => num === input[index])
     
     setResult(isCorrect ? "correct" : "incorrect")
     setStep("result")
     
     if (isCorrect) {
-      setMaxLevel(Math.max(maxLevel, level + 1)) // Actualizamos el máximo nivel alcanzado
+      const newMax = Math.max(maxLevel, level + 1)
+      setMaxLevel(newMax)
+      if (phase === "forward") setForwardSpan(Math.max(forwardSpan, level))
+      else setBackwardSpan(Math.max(backwardSpan, level))
     }
   }
 
-  // Avanza al siguiente nivel o termina el juego
+  // Avanza al siguiente nivel o cambia de fase o termina
   const handleNextLevel = () => {
     if (result === "correct") {
-      // Subir al siguiente nivel
       setLevel(level + 1)
       setStep("sequence")
       generateSequence()
     } else {
-      // El juego termina, vamos a la página de detección de video
-      setStep("completed")
+      if (phase === "forward") {
+        // Pasar a fase backward
+        setForwardSpan(level - 1)
+        setPhase("backward")
+        setLevel(2)
+        setMaxLevel(2)
+        setStep("phase_transition")
+      } else {
+        setBackwardSpan(level - 1)
+        setStep("completed")
+      }
     }
   }
 
@@ -162,7 +179,12 @@ export default function MemoriaPage() {
         detalles: {
           nivelMaximo: maxLevel - 1,
           secuenciaMaxima: maxLevel - 1,
-          tiempoTotal: durationInSec
+          tiempoTotal: durationInSec,
+          // Marcadores TDAH inatento (memoria de trabajo)
+          spanDireto: forwardSpan,
+          spanInverso: backwardSpan,
+          diferenciaSpan: forwardSpan - backwardSpan,
+          // Gap grande entre directo e inverso = dificultad en memoria de trabajo ejecutiva
         }
       }
       
@@ -256,7 +278,12 @@ export default function MemoriaPage() {
 
             {step === "input" && (
               <div className="w-full">
-                <h2 className="text-center text-xl font-bold mb-4">Introduce la secuencia en orden inverso</h2>
+                <h2 className="text-center text-xl font-bold mb-2">
+                  {phase === "forward" ? "Repite los números en el mismo orden" : "Repite los números al revés 🔄"}
+                </h2>
+                <p className="text-center text-sm text-muted-foreground mb-3">
+                  {phase === "forward" ? `Secuencia de ${sequence.length} números` : `Al revés — ${sequence.length} números`}
+                </p>
                 
                 <div className="mb-4 h-12 bg-muted/20 rounded flex items-center justify-center">
                   <p className="text-2xl font-mono">
@@ -285,9 +312,9 @@ export default function MemoriaPage() {
                     {result === "correct" ? "¡Correcto!" : "Incorrecto"}
                   </h2>
                   <p>
-                    {result === "correct" 
-                      ? `¡Excelente! Avanzarás al nivel ${level + 1}.` 
-                      : `La secuencia correcta era: ${[...sequence].reverse().join(' - ')}`}
+                    {result === "correct"
+                      ? `¡Excelente! Avanzarás al nivel ${level + 1}.`
+                      : `La secuencia correcta era: ${phase === "forward" ? sequence.join(' - ') : [...sequence].reverse().join(' - ')}`}
                   </p>
                 </div>
                 
@@ -300,15 +327,41 @@ export default function MemoriaPage() {
               </div>
             )}
 
+            {step === "phase_transition" && (
+              <div className="w-full space-y-4 text-center">
+                <div className="text-5xl mb-2">🔄</div>
+                <h2 className="text-xl font-bold">¡Ahora al revés!</h2>
+                <p className="text-muted-foreground">
+                  Verás los números como antes, pero tendrás que repetirlos <strong>en orden inverso</strong>.
+                </p>
+                <div className="bg-muted rounded-lg p-4 text-sm space-y-1">
+                  <p>Por ejemplo, si ves: <strong>3 → 7 → 2</strong></p>
+                  <p>Tienes que tocar: <strong>2 → 7 → 3</strong></p>
+                </div>
+                <Button
+                  className="w-full h-14 text-lg font-semibold bg-[#3876F4] hover:bg-[#3876F4]/90 text-white"
+                  onClick={() => { setStep("sequence"); generateSequence() }}
+                >
+                  ¡Entendido!
+                </Button>
+              </div>
+            )}
+
             {step === "completed" && (
               <div className="w-full space-y-4 text-center">
                 <h2 className="text-xl font-bold mb-2">¡Prueba completada!</h2>
-                <p className="text-muted-foreground mb-4">
-                  Has alcanzado el nivel {maxLevel - 1}. Tu memoria de trabajo visual puede recordar {maxLevel - 1} elementos.
-                </p>
-                  
+                <div className="grid grid-cols-2 gap-3 my-2">
+                  <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3">
+                    <div className="text-2xl font-bold text-blue-600">{forwardSpan}</div>
+                    <div className="text-xs text-muted-foreground">Span directo</div>
+                  </div>
+                  <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-3">
+                    <div className="text-2xl font-bold text-purple-600">{backwardSpan}</div>
+                    <div className="text-xs text-muted-foreground">Span inverso</div>
+                  </div>
+                </div>
                 <Button 
-                  className="w-full h-12 text-white font-medium bg-[#3876F4] hover:bg-[#3876F4]/90"
+                  className="w-full h-14 text-lg font-semibold bg-[#3876F4] hover:bg-[#3876F4]/90 text-white"
                   onClick={completeExercise}
                 >
                   <ArrowRight className="mr-2 h-4 w-4" /> Continuar
