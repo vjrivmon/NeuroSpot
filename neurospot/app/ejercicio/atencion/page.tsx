@@ -1,10 +1,9 @@
 "use client"
 
 import { useState, useEffect, useCallback, useRef } from "react"
-import { Header } from "@/components/header"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Progress } from "@/components/ui/progress"
+import { ExerciseShell } from "@/components/ExerciseShell"
+import { NSButton } from "@/components/ui/NSButton"
+import { ProgressBar } from "@/components/ui/ProgressBar"
 import { useRouter } from "next/navigation"
 import {
   AlertDialog,
@@ -16,34 +15,31 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { PauseCircle, AlertCircle, CheckCircle2, Clock, ArrowRight } from "lucide-react"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { CheckCircle2, AlertCircle } from "lucide-react"
 import { useDynamo } from "@/hooks/use-dynamo"
 
 type ResultsType = {
-  correctResponses: number;
-  commissionErrors: number; // Presionó cuando no debía (impulsividad)
-  omissionErrors: number;   // No presionó cuando debía (inatención)
-  reactionTimes: number[];
-  // Marcadores TDAH inatento
-  reactionTimeVariability: number; // Desviación estándar de tiempos de reacción (ms)
-  omissionRate: number;            // omisionErrors / total targets objetivo (0-1)
+  correctResponses: number
+  commissionErrors: number
+  omissionErrors: number
+  reactionTimes: number[]
+  reactionTimeVariability: number
+  omissionRate: number
 }
 
 type LevelType = {
-  name: string;
-  duration: number; // en segundos
-  interval: number; // en milisegundos
-  targetProbability: number; // probabilidad de mostrar la letra objetivo (0-1)
+  name: string
+  duration: number
+  interval: number
+  targetProbability: number
 }
 
 export default function AtencionPage() {
-  // Tiempo total de la prueba (30 + 20 + 10 = 60 segundos)
-  const TOTAL_TIME = 60;
-  
+  const TOTAL_TIME = 60
+
   const [currentLetter, setCurrentLetter] = useState<string | null>(null)
   const [previousLetter, setPreviousLetter] = useState<string | null>(null)
-  const [timeLeft, setTimeLeft] = useState(TOTAL_TIME) 
+  const [timeLeft, setTimeLeft] = useState(TOTAL_TIME)
   const [progress, setProgress] = useState(0)
   const [showDialog, setShowDialog] = useState(false)
   const [gameStarted, setGameStarted] = useState(false)
@@ -55,160 +51,78 @@ export default function AtencionPage() {
     correctResponses: 0,
     commissionErrors: 0,
     omissionErrors: 0,
-    reactionTimes: [] as number[],
+    reactionTimes: [],
     reactionTimeVariability: 0,
     omissionRate: 0,
   })
   const [stimulusStartTime, setStimulusStartTime] = useState<number | null>(null)
-  const [targetLetter] = useState('X')
-  
-  // Control de niveles
-  const [currentLevel, setCurrentLevel] = useState(0) // 0, 1, 2 para los tres niveles
+  const [targetLetter] = useState("X")
+
+  const [currentLevel, setCurrentLevel] = useState(0)
   const [showLevelTransition, setShowLevelTransition] = useState(false)
-  
-  // Referencias para los intervalos
+
   const gameTimerRef = useRef<NodeJS.Timeout | null>(null)
   const letterTimerRef = useRef<NodeJS.Timeout | null>(null)
   const transitionTimerRef = useRef<NodeJS.Timeout | null>(null)
-  
+
   const router = useRouter()
   const dynamo = useDynamo()
   const [startTime, setStartTime] = useState<number>(0)
 
-  // Definición de los niveles con la nueva duración solicitada
   const levels: LevelType[] = [
-    {
-      name: "Nivel 1: Fácil",
-      duration: 25, // 30 segundos
-      interval: 1000, // 4 segundos
-      targetProbability: 0.25 // 20% de probabilidad
-    },
-    {
-      name: "Nivel 2: Medio",
-      duration: 20, // 20 segundos
-      interval: 500, // 3 segundos
-      targetProbability: 0.15 // 25% de probabilidad
-    },
-    {
-      name: "Nivel 3: Difícil",
-      duration: 15, // 10 segundos
-      interval: 250, // 2 segundos
-      targetProbability: 0.10 // 30% de probabilidad
-    }
+    { name: "Nivel 1: Fácil", duration: 25, interval: 1000, targetProbability: 0.25 },
+    { name: "Nivel 2: Medio", duration: 20, interval: 500, targetProbability: 0.15 },
+    { name: "Nivel 3: Difícil", duration: 15, interval: 250, targetProbability: 0.1 },
   ]
 
-  // Letras que se mostrarán en el juego (excluyendo el target)
-  const letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'Z']
+  const letters = ["A","B","C","D","E","F","G","H","J","K","L","M","N","P","Q","R","S","T","U","V","W","Z"]
 
-  // Limpiar todos los temporizadores
   const clearAllTimers = useCallback(() => {
-    if (letterTimerRef.current) {
-      clearInterval(letterTimerRef.current)
-      letterTimerRef.current = null
-    }
-    
-    if (gameTimerRef.current) {
-      clearInterval(gameTimerRef.current)
-      gameTimerRef.current = null
-    }
-    
-    if (transitionTimerRef.current) {
-      clearTimeout(transitionTimerRef.current)
-      transitionTimerRef.current = null
-    }
-    
-    console.log("Todos los temporizadores limpiados")
+    if (letterTimerRef.current) { clearInterval(letterTimerRef.current); letterTimerRef.current = null }
+    if (gameTimerRef.current) { clearInterval(gameTimerRef.current); gameTimerRef.current = null }
+    if (transitionTimerRef.current) { clearTimeout(transitionTimerRef.current); transitionTimerRef.current = null }
   }, [])
 
-  // Generar una nueva letra
   const generateLetter = useCallback(() => {
     if (gamePaused || gameFinished || showLevelTransition) return
-    
-    // Si la letra actual es la target, asegurarnos de que la siguiente no lo sea
+
     let showTarget = Math.random() < levels[currentLevel].targetProbability
-    if (currentLetter === targetLetter) {
-      showTarget = false
-    }
-    
-    let newLetter;
-    
-    if (showTarget) {
-      newLetter = targetLetter
-    } else {
-      // Elige una letra aleatoria que no sea la objetivo
-      const availableLetters = letters.filter(l => l !== targetLetter)
-      const randomIndex = Math.floor(Math.random() * availableLetters.length)
-      newLetter = availableLetters[randomIndex]
-    }
-    
+    if (currentLetter === targetLetter) showTarget = false
+
+    const newLetter = showTarget
+      ? targetLetter
+      : letters[Math.floor(Math.random() * letters.filter((l) => l !== targetLetter).length)]
+
     setPreviousLetter(currentLetter)
     setCurrentLetter(newLetter)
     setStimulusStartTime(Date.now())
-    
-    // Si el anterior fue la letra objetivo y el usuario no presionó, contar como error de omisión
+
     if (previousLetter === targetLetter && stimulusStartTime !== null) {
-      // Verificamos que no haya habido un correcto registrado recientemente
       const timeSinceStimulus = Date.now() - stimulusStartTime
-      if (timeSinceStimulus > levels[currentLevel].interval * 0.8) { // Si pasó más del 80% del intervalo, fue omisión
-        setResults(prev => ({
-          ...prev,
-          omissionErrors: prev.omissionErrors + 1
-        }))
+      if (timeSinceStimulus > levels[currentLevel].interval * 0.8) {
+        setResults((prev) => ({ ...prev, omissionErrors: prev.omissionErrors + 1 }))
       }
     }
   }, [currentLetter, previousLetter, targetLetter, letters, stimulusStartTime, currentLevel, levels, gamePaused, gameFinished, showLevelTransition])
 
-  // Iniciar un timer para cambiar la letra
   const startLetterTimer = useCallback(() => {
-    if (letterTimerRef.current) {
-      clearInterval(letterTimerRef.current)
-      letterTimerRef.current = null
-    }
-    
-    // Generar la primera letra inmediatamente
+    if (letterTimerRef.current) { clearInterval(letterTimerRef.current); letterTimerRef.current = null }
     generateLetter()
-    
-    // Configurar intervalo para cambiar letras según el nivel
-    letterTimerRef.current = setInterval(() => {
-      generateLetter()
-    }, levels[currentLevel].interval)
-    
-    console.log(`Timer de letras iniciado para nivel ${currentLevel + 1}, intervalo: ${levels[currentLevel].interval}ms`)
+    letterTimerRef.current = setInterval(() => { generateLetter() }, levels[currentLevel].interval)
   }, [generateLetter, currentLevel, levels])
 
-  // Iniciar un nuevo nivel
   const startLevel = useCallback((level: number) => {
-    console.log(`Iniciando nivel ${level + 1}, duración: ${levels[level].duration}s`)
-    
-    // Limpiar solo el timer de letras, no el timer principal
-    if (letterTimerRef.current) {
-      clearInterval(letterTimerRef.current)
-      letterTimerRef.current = null
-    }
-    
-    if (transitionTimerRef.current) {
-      clearTimeout(transitionTimerRef.current)
-      transitionTimerRef.current = null
-    }
-    
-    // Actualizar el nivel 
+    if (letterTimerRef.current) { clearInterval(letterTimerRef.current); letterTimerRef.current = null }
+    if (transitionTimerRef.current) { clearTimeout(transitionTimerRef.current); transitionTimerRef.current = null }
     setCurrentLevel(level)
-    
-    // Mostrar transición de nivel
     setShowLevelTransition(true)
-    setCurrentLetter(null) // Ocultar letra durante la transición
-    
-    // Terminar la transición después de un tiempo
+    setCurrentLetter(null)
     transitionTimerRef.current = setTimeout(() => {
       setShowLevelTransition(false)
-      
-      // Iniciar el timer de letras con el intervalo del nivel actual
       startLetterTimer()
-    }, 1200) // Mostrar transición por 1.2 segundos
-    
-  }, [levels, startLetterTimer])
+    }, 1200)
+  }, [startLetterTimer])
 
-  // Iniciar el juego
   const startGame = useCallback(() => {
     setGameStarted(true)
     setGamePaused(false)
@@ -216,206 +130,117 @@ export default function AtencionPage() {
     setTimeLeft(TOTAL_TIME)
     setProgress(0)
     setCurrentLevel(0)
-    setResults({
-      correctResponses: 0,
-      commissionErrors: 0,
-      omissionErrors: 0,
-      reactionTimes: [] as number[],
-      reactionTimeVariability: 0,
-      omissionRate: 0,
-    })
+    setResults({ correctResponses: 0, commissionErrors: 0, omissionErrors: 0, reactionTimes: [], reactionTimeVariability: 0, omissionRate: 0 })
     setStartTime(Date.now())
-    
-    // Iniciar el timer principal
-    if (gameTimerRef.current) {
-      clearInterval(gameTimerRef.current)
-      gameTimerRef.current = null
-    }
-    
-    // Iniciar el primer nivel sin borrar el timer principal
+
+    if (gameTimerRef.current) { clearInterval(gameTimerRef.current); gameTimerRef.current = null }
     setCurrentLevel(0)
     startLetterTimer()
-    
-    // Iniciar el timer principal del juego
-    gameTimerRef.current = setInterval(() => {
-      setTimeLeft(prevTime => {
-        const newTime = prevTime - 1;
-        
-        // Actualizar la barra de progreso síncronamente
-        const elapsedTime = TOTAL_TIME - newTime;
-        const progressValue = (elapsedTime / TOTAL_TIME) * 100;
-        setProgress(Math.min(100, progressValue));
-        
-        // Terminar juego si llega a 0
-        if (newTime <= 0) {
-          console.log("Tiempo total agotado, terminando juego");
-          setGameFinished(true);
-          clearAllTimers();
-          return 0;
-        }
-        
-        // Cambiar de nivel en los tiempos adecuados
-        if (elapsedTime === 30 && currentLevel === 0) {
-          console.log("Cambiando a nivel 2");
-          startLevel(1);
-        } else if (elapsedTime === 50 && currentLevel === 1) {
-          console.log("Cambiando a nivel 3");
-          startLevel(2);
-        }
-        
-        return newTime;
-      });
-    }, 1000);
-    
-  }, [clearAllTimers, startLevel, levels, TOTAL_TIME])
 
-  // Pausar el juego
+    gameTimerRef.current = setInterval(() => {
+      setTimeLeft((prevTime) => {
+        const newTime = prevTime - 1
+        const elapsedTime = TOTAL_TIME - newTime
+        setProgress(Math.min(100, (elapsedTime / TOTAL_TIME) * 100))
+
+        if (newTime <= 0) {
+          setGameFinished(true)
+          clearAllTimers()
+          return 0
+        }
+        if (elapsedTime === 30 && currentLevel === 0) startLevel(1)
+        else if (elapsedTime === 50 && currentLevel === 1) startLevel(2)
+        return newTime
+      })
+    }, 1000)
+  }, [clearAllTimers, startLevel, TOTAL_TIME, currentLevel, startLetterTimer])
+
   const pauseGame = useCallback(() => {
-    console.log("Juego pausado")
     setGamePaused(true)
     clearAllTimers()
     setShowDialog(true)
   }, [clearAllTimers])
 
-  // Reanudar el juego
   const resumeGame = useCallback(() => {
-    console.log("Reanudando juego")
     setGamePaused(false)
     setShowDialog(false)
-    
-    // Reiniciar el timer principal
+
     gameTimerRef.current = setInterval(() => {
-      setTimeLeft(prevTime => {
-        const newTime = prevTime - 1;
-        
-        // Actualizar la barra de progreso síncronamente
-        const elapsedTime = TOTAL_TIME - newTime;
-        const progressValue = (elapsedTime / TOTAL_TIME) * 100;
-        setProgress(Math.min(100, progressValue));
-        
-        // Terminar juego si llega a 0
+      setTimeLeft((prevTime) => {
+        const newTime = prevTime - 1
+        const elapsedTime = TOTAL_TIME - newTime
+        setProgress(Math.min(100, (elapsedTime / TOTAL_TIME) * 100))
         if (newTime <= 0) {
-          console.log("Tiempo total agotado, terminando juego");
-          setGameFinished(true);
-          clearAllTimers();
-          return 0;
+          setGameFinished(true)
+          clearAllTimers()
+          return 0
         }
-        
-        // Cambiar de nivel en los tiempos adecuados
-        if (elapsedTime === 30 && currentLevel === 0) {
-          console.log("Cambiando a nivel 2");
-          startLevel(1);
-        } else if (elapsedTime === 50 && currentLevel === 1) {
-          console.log("Cambiando a nivel 3");
-          startLevel(2);
-        }
-        
-        return newTime;
-      });
-    }, 1000);
-    
-    // Reiniciar el timer de letras
+        if (elapsedTime === 30 && currentLevel === 0) startLevel(1)
+        else if (elapsedTime === 50 && currentLevel === 1) startLevel(2)
+        return newTime
+      })
+    }, 1000)
     startLetterTimer()
-    
   }, [clearAllTimers, startLetterTimer, TOTAL_TIME, currentLevel, startLevel])
 
-  // Procesar clic del usuario
   const handleButtonPress = useCallback(() => {
     if (!gameStarted || gamePaused || gameFinished || stimulusStartTime === null || showLevelTransition || !currentLetter) return
-    
     const reactionTime = Date.now() - stimulusStartTime
-    
-    // Respuesta correcta si la letra actual es la objetivo
+
     if (currentLetter === targetLetter) {
-      setResults(prev => ({
+      setResults((prev) => ({
         ...prev,
         correctResponses: prev.correctResponses + 1,
-        reactionTimes: [...prev.reactionTimes, reactionTime]
+        reactionTimes: [...prev.reactionTimes, reactionTime],
       }))
       setFeedbackType("success")
     } else {
-      // Error de comisión: presionó cuando no debía
-      setResults(prev => ({
-        ...prev,
-        commissionErrors: prev.commissionErrors + 1
-      }))
+      setResults((prev) => ({ ...prev, commissionErrors: prev.commissionErrors + 1 }))
       setFeedbackType("error")
     }
-    
     setShowFeedback(true)
-    
-    // Ocultar el feedback después de un tiempo
-    setTimeout(() => {
-      setShowFeedback(false)
-    }, 500)
-    
+    setTimeout(() => setShowFeedback(false), 500)
   }, [gameStarted, gamePaused, gameFinished, currentLetter, targetLetter, stimulusStartTime, showLevelTransition])
 
-  // Finalizar el juego
   const finishGame = useCallback(async () => {
-    console.log("Finalizando juego")
     clearAllTimers()
     setGameFinished(true)
     setCurrentLetter(null)
-    
-    // Guardar ejercicio como completado en localStorage
-    if (typeof window !== 'undefined') {
+
+    if (typeof window !== "undefined") {
       try {
-        const saved = localStorage.getItem("completedExercises") 
+        const saved = localStorage.getItem("completedExercises")
         const completedExercises = saved ? JSON.parse(saved) : []
-        
         if (!completedExercises.includes("atencion")) {
           completedExercises.push("atencion")
           localStorage.setItem("completedExercises", JSON.stringify(completedExercises))
-          console.log("Ejercicio de Atención completado y guardado en localStorage")
         }
-      } catch (e) {
-        console.error("Error updating completedExercises:", e)
-      }
+      } catch {}
     }
-    
-    // Calcular estadísticas finales
-    const avgReactionTime = results.reactionTimes.length > 0 
-      ? results.reactionTimes.reduce((sum, time) => sum + time, 0) / results.reactionTimes.length 
-      : 0
-    
-    const medianReactionTime = results.reactionTimes.length > 0 
-      ? calculateMedian(results.reactionTimes) 
-      : 0
 
-    // Marcadores TDAH inatento: VTR y omission rate
-    const vtr = results.reactionTimes.length > 1
-      ? Math.sqrt(
-          results.reactionTimes.reduce((acc, t) => acc + Math.pow(t - avgReactionTime, 2), 0)
-          / results.reactionTimes.length
-        )
-      : 0
+    const avgReactionTime =
+      results.reactionTimes.length > 0
+        ? results.reactionTimes.reduce((sum, time) => sum + time, 0) / results.reactionTimes.length
+        : 0
+
+    const medianReactionTime = results.reactionTimes.length > 0 ? calculateMedian(results.reactionTimes) : 0
+
+    const vtr =
+      results.reactionTimes.length > 1
+        ? Math.sqrt(results.reactionTimes.reduce((acc, t) => acc + Math.pow(t - avgReactionTime, 2), 0) / results.reactionTimes.length)
+        : 0
     const totalTargets = results.correctResponses + results.omissionErrors
     const omissionRate = totalTargets > 0 ? results.omissionErrors / totalTargets : 0
-    
-    // Guardar los resultados en DynamoDB
+
     try {
-      // Calcular puntuación basada en los resultados
       const totalTrials = results.correctResponses + results.omissionErrors + results.commissionErrors
-      const precision = totalTrials > 0 ? (results.correctResponses / totalTrials) * 100 : 0
-      
-      // Penalizar errores de comisión más que omisiones (la impulsividad es peor)
       const comisionPenalty = results.commissionErrors * 1.5
       const omisionPenalty = results.omissionErrors * 1
-      
-      // Calcular puntuación final (100 - penalizaciones, mínimo 0)
       let puntuacionFinal = Math.max(0, Math.min(100, 100 - (comisionPenalty + omisionPenalty)))
-      
-      // Ajustar por tiempo de reacción (si es muy lento, reducir puntuación)
-      if (avgReactionTime > 1000) {
-        puntuacionFinal = Math.max(0, puntuacionFinal - 10) // Penalización por tiempo lento
-      }
-      
-      // Duración total del ejercicio en segundos
+      if (avgReactionTime > 1000) puntuacionFinal = Math.max(0, puntuacionFinal - 10)
       const endTime = Date.now()
       const durationInSec = Math.floor((endTime - startTime) / 1000)
-      
-      // Datos del ejercicio a guardar
+
       const exerciseData = {
         tipo: "atencion",
         puntuacion: Math.round(puntuacionFinal),
@@ -428,268 +253,237 @@ export default function AtencionPage() {
           tiempoReaccionMediana: Math.round(medianReactionTime),
           nivelAlcanzado: currentLevel + 1,
           tiempoTotal: durationInSec,
-          // Marcadores TDAH inatento
           variabilidadTiempoReaccion: Math.round(vtr),
           tasaOmision: Math.round(omissionRate * 100) / 100,
-          consistenciaAtencional: vtr < 150 ? "alta" : vtr < 300 ? "media" : "baja"
-        }
+          consistenciaAtencional: vtr < 150 ? "alta" : vtr < 300 ? "media" : "baja",
+        },
       }
-      
-      // Guardar en DynamoDB
+
       const result = await dynamo.saveExerciseResult(exerciseData)
-      
-      if (!result.success) {
-        console.error("Error al guardar resultados en DynamoDB:", result.error)
-      } else {
-        console.log("Resultados de Atención guardados correctamente en DynamoDB:", exerciseData)
-      }
+      if (!result.success) console.error("Error saving results:", result.error)
     } catch (error) {
-      console.error("Error al procesar resultados de atención:", error)
+      console.error("Error processing attention results:", error)
     }
   }, [clearAllTimers, results, currentLevel, dynamo, startTime])
 
-  // Función auxiliar para calcular la mediana
   const calculateMedian = (values: number[]): number => {
-    if (values.length === 0) return 0;
-    
-    const sorted = [...values].sort((a, b) => a - b);
-    const middle = Math.floor(sorted.length / 2);
-    
-    if (sorted.length % 2 === 0) {
-      return (sorted[middle - 1] + sorted[middle]) / 2;
-    }
-    
-    return sorted[middle];
-  };
+    if (values.length === 0) return 0
+    const sorted = [...values].sort((a, b) => a - b)
+    const middle = Math.floor(sorted.length / 2)
+    return sorted.length % 2 === 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle]
+  }
 
-  // Sistema de seguridad para evitar que se quede bloqueado en la transición
   useEffect(() => {
     if (showLevelTransition) {
       const safetyTimer = setTimeout(() => {
-        console.log("Safety timer activated - forcing level transition to complete")
         setShowLevelTransition(false)
-        
-        // Asegurar que se genera una letra si el juego aún está activo
-        if (gameStarted && !gamePaused && !gameFinished) {
-          startLetterTimer()
-        }
-      }, 1500) // Reducir a 1.5 segundos para que sea más fluido
-      
+        if (gameStarted && !gamePaused && !gameFinished) startLetterTimer()
+      }, 1500)
       return () => clearTimeout(safetyTimer)
     }
   }, [showLevelTransition, gameStarted, gamePaused, gameFinished, startLetterTimer])
 
-  // Limpiar recursos al desmontar
-  useEffect(() => {
-    return () => {
-      clearAllTimers()
-    }
-  }, [clearAllTimers])
+  useEffect(() => { return () => { clearAllTimers() } }, [clearAllTimers])
 
-  // Continuar con el siguiente ejercicio
   const handleContinue = async () => {
-    // Si no se han guardado los resultados todavía, llamar a finishGame
-    if (!gameFinished) {
-      await finishGame();
-    }
-    
-    router.push("/ejercicio/memoria");
+    if (!gameFinished) await finishGame()
+    router.push("/ejercicio/memoria")
   }
 
+  // ── Instructions screen ──
+  if (!gameStarted) {
+    return (
+      <ExerciseShell
+        title="Prueba de Atención"
+        progress={0}
+        timeLeft={TOTAL_TIME}
+        totalTime={TOTAL_TIME}
+        instructions={{
+          steps: [
+            `Pulsa el botón SOLO cuando veas la letra "${targetLetter}"`,
+            "La prueba dura 1 minuto y tiene 3 niveles de dificultad",
+            "Las letras aparecerán cada vez más rápido. ¡Concéntrate!",
+          ],
+          onStart: startGame,
+          buttonLabel: "¡Empezar!",
+        }}
+      >
+        <div />
+      </ExerciseShell>
+    )
+  }
+
+  // ── Results screen ──
+  if (gameFinished) {
+    const avg =
+      results.reactionTimes.length > 0
+        ? results.reactionTimes.reduce((a, b) => a + b, 0) / results.reactionTimes.length
+        : 0
+    const vtr =
+      results.reactionTimes.length > 1
+        ? Math.sqrt(results.reactionTimes.reduce((acc, t) => acc + Math.pow(t - avg, 2), 0) / results.reactionTimes.length)
+        : 0
+    const totalT = results.correctResponses + results.omissionErrors
+    const omRate = totalT > 0 ? Math.round((results.omissionErrors / totalT) * 100) : 0
+    const consistencia = vtr < 150 ? "Alta" : vtr < 300 ? "Media" : "Baja"
+    const consistenciaColor = vtr < 150 ? "text-success" : vtr < 300 ? "text-warning" : "text-red-500"
+
+    return (
+      <ExerciseShell
+        title="Prueba de Atención"
+        progress={100}
+        timeLeft={0}
+        totalTime={TOTAL_TIME}
+        onNext={handleContinue}
+        nextLabel="Continuar al siguiente ejercicio"
+      >
+        <div className="bg-white rounded-3xl shadow-lg p-8 w-full max-w-lg space-y-6 text-center">
+          <div className="flex items-center justify-center gap-2">
+            <CheckCircle2 className="h-8 w-8 text-success" />
+            <h2 className="text-2xl font-bold text-gray-800">¡Prueba completada!</h2>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-green-50 rounded-2xl p-4">
+              <div className="text-3xl font-bold text-success">{results.correctResponses}</div>
+              <div className="text-sm text-gray-500 mt-1">Aciertos</div>
+            </div>
+            <div className="bg-red-50 rounded-2xl p-4">
+              <div className="text-3xl font-bold text-red-500">
+                {results.commissionErrors + results.omissionErrors}
+              </div>
+              <div className="text-sm text-gray-500 mt-1">Errores</div>
+            </div>
+            <div className="bg-blue-50 rounded-2xl p-4">
+              <div className="text-3xl font-bold text-primary">
+                {results.reactionTimes.length > 0 ? `${Math.round(avg)}` : "—"}
+              </div>
+              <div className="text-sm text-gray-500 mt-1">ms reacción</div>
+            </div>
+          </div>
+
+          <div className="bg-surface rounded-2xl p-4 space-y-2">
+            <div className="flex justify-between text-base">
+              <span className="text-gray-600">Consistencia atencional</span>
+              <span className={`font-bold ${consistenciaColor}`}>{consistencia}</span>
+            </div>
+            <div className="flex justify-between text-base">
+              <span className="text-gray-600">Estímulos perdidos</span>
+              <span className="font-bold text-gray-800">{omRate}%</span>
+            </div>
+          </div>
+        </div>
+      </ExerciseShell>
+    )
+  }
+
+  // ── Level transition ──
+  if (showLevelTransition) {
+    return (
+      <ExerciseShell
+        title="Prueba de Atención"
+        progress={progress}
+        timeLeft={timeLeft}
+        totalTime={TOTAL_TIME}
+        phaseLabel={levels[currentLevel].name}
+      >
+        <div className="text-center space-y-6 animate-pulse">
+          <div className="w-24 h-24 mx-auto bg-primary/10 rounded-full flex items-center justify-center">
+            <span className="text-4xl font-bold text-primary">{currentLevel + 1}</span>
+          </div>
+          <h2 className="text-3xl font-bold text-gray-800">{levels[currentLevel].name}</h2>
+          <p className="text-lg text-gray-500">
+            {currentLevel === 0
+              ? "Letras más lentas, fácil de seguir"
+              : currentLevel === 1
+                ? "Velocidad moderada, mantén el ritmo"
+                : "Velocidad rápida, máxima concentración"}
+          </p>
+        </div>
+      </ExerciseShell>
+    )
+  }
+
+  // ── Active game ──
   return (
-    <main className="min-h-screen flex flex-col">
-      <Header showBackButton />
-      
-      <div className="container max-w-full mx-auto px-6 pt-6 pb-4 flex flex-col">
-        <Card className="border-none shadow-lg flex flex-col w-full max-w-6xl mx-auto h-auto">
-          <CardHeader className="pb-4 border-b">
-            <div className="flex justify-between items-center">
-              <CardTitle className="text-2xl">Prueba de Atención</CardTitle>
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                onClick={gameStarted && !gameFinished ? pauseGame : () => setShowDialog(true)} 
-                aria-label={gameStarted ? "Pausar ejercicio" : "Información"}
-              >
-                <PauseCircle className="h-6 w-6" />
-              </Button>
-            </div>
-            <div className="flex justify-between text-sm text-muted-foreground">
-              <div className="flex items-center gap-2">
-                <Clock className="h-4 w-4" />
-                <span>Tiempo: {timeLeft}s</span>
-              </div>
-              <span>
-                Aciertos: {results.correctResponses}
-              </span>
-            </div>
-            <Progress value={progress} className="h-2" />
-          </CardHeader>
+    <ExerciseShell
+      title="Prueba de Atención"
+      progress={progress}
+      timeLeft={timeLeft}
+      totalTime={TOTAL_TIME}
+      phaseLabel={levels[currentLevel].name}
+    >
+      <div className="flex flex-col items-center gap-6 w-full max-w-lg">
+        {/* Target reminder */}
+        <div className="bg-primary/5 rounded-2xl px-6 py-2 text-base text-gray-600">
+          Pulsa cuando veas{" "}
+          <span className="text-2xl font-extrabold text-primary inline-block mx-1">{targetLetter}</span>
+        </div>
 
-          <CardContent className="px-4 pt-3 pb-6 flex flex-col items-center space-y-3 min-h-0">
-            {!gameStarted ? (
-              <div className="text-center space-y-6 w-full">
-                <div className="bg-muted/30 p-4 rounded-lg w-full">
-                  <p className="text-sm text-muted-foreground mb-3 font-medium">
-                    Instrucciones:
-                  </p>
-                  <div className="flex items-start space-y-3 flex-col">
-                    <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-full bg-[#3876F4] text-white flex items-center justify-center mr-3 flex-shrink-0">
-                        <span className="font-bold">1</span>
-                      </div>
-                                            <p className="text-sm">
-                        Pulsa el botón <span className="font-bold">SOLO</span> cuando veas la letra <span className="font-bold text-primary">{targetLetter}</span>
-                      </p>
-                    </div>
-                    
-                    <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-full bg-[#3876F4] text-white flex items-center justify-center mr-3 flex-shrink-0">
-                        <span className="font-bold">2</span>
-                      </div>
-                                            <p className="text-sm">
-                        La prueba dura 1 minuto y tiene 3 niveles de dificultad
-                      </p>
-                    </div>
-                    
-                    <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-full bg-[#3876F4] text-white flex items-center justify-center mr-3 flex-shrink-0">
-                        <span className="font-bold">3</span>
-                      </div>                      <p className="text-sm">
-                        Las letras aparecerán cada vez más rápido
-                      </p>
-                    </div>
-                  </div>
-                </div>
-                <Button 
-                  className="w-full h-12 text-white font-medium bg-[#3876F4] hover:bg-[#3876F4]/90"
-                  onClick={startGame}
-                >
-                  Comenzar
-                </Button>
-              </div>
-            ) : gameFinished ? (
-              <div className="text-center space-y-4 w-full">
-                <Alert className="bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800 w-full">
-                  <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
-                  <div>
-                    <AlertTitle className="text-green-800 dark:text-green-300">¡Prueba completada!</AlertTitle>
-                    <AlertDescription className="text-green-700 dark:text-green-400 text-sm space-y-1">
-                      <div>✅ Aciertos: <strong>{results.correctResponses}</strong></div>
-                      <div>❌ Errores: <strong>{results.commissionErrors + results.omissionErrors}</strong></div>
-                      <div>⏱️ Tiempo de reacción: <strong>{
-                        results.reactionTimes.length > 0 
-                          ? `${Math.round(results.reactionTimes.reduce((a, b) => a + b, 0) / results.reactionTimes.length)} ms` 
-                          : "N/A"
-                      }</strong></div>
-                      {(() => {
-                        const avg = results.reactionTimes.length > 0
-                          ? results.reactionTimes.reduce((a,b) => a+b, 0) / results.reactionTimes.length : 0
-                        const vtr = results.reactionTimes.length > 1
-                          ? Math.sqrt(results.reactionTimes.reduce((acc,t) => acc + Math.pow(t-avg,2), 0) / results.reactionTimes.length)
-                          : 0
-                        const totalT = results.correctResponses + results.omissionErrors
-                        const omRate = totalT > 0 ? Math.round((results.omissionErrors / totalT) * 100) : 0
-                        const consistencia = vtr < 150 ? "🟢 Alta" : vtr < 300 ? "🟡 Media" : "🔴 Baja"
-                        return (
-                          <>
-                            <div>🎯 Consistencia atencional: <strong>{consistencia}</strong></div>
-                            <div>👁️ Estímulos perdidos: <strong>{omRate}%</strong></div>
-                          </>
-                        )
-                      })()}
-                    </AlertDescription>
-                  </div>
-                </Alert>
-                <Button 
-                  className="w-full h-12 text-white font-medium bg-[#3876F4] hover:bg-[#3876F4]/90"
-                  onClick={handleContinue}
-                >
-                  Continuar al siguiente ejercicio
-                </Button>
-              </div>
-            ) : showLevelTransition ? (
-              <div className="text-center space-y-4 w-full animate-pulse">
-                <h2 className="text-2xl font-bold">{levels[currentLevel].name}</h2>
-                <p className="text-sm text-muted-foreground">
-                  {currentLevel === 0 
-                    ? "Letras más lentas, fácil de seguir"
-                    : currentLevel === 1 
-                      ? "Velocidad moderada, mantén el ritmo"
-                      : "Velocidad rápida, máxima concentración"}
-                </p>
-                <div className="w-16 h-16 mx-auto bg-[#3876F4]/20 rounded-full flex items-center justify-center">
-                  <span className="text-2xl font-bold">{currentLevel + 1}</span>
-                </div>
-              </div>
-            ) : (
-              <>
-                <div className="text-center w-full">
-                  <div className="flex flex-col items-center">
-                    <div className="text-sm text-muted-foreground mb-2">
-                      Pulsa cuando veas la letra <span className="font-bold text-primary">{targetLetter}</span>
-                    </div>
-                  <div className="flex justify-center items-center h-40 w-40 mx-auto rounded-full bg-muted/20 relative">
-                    <h1 className="text-8xl font-bold">{currentLetter}</h1>
-                    {showFeedback && (
-                      <div className={`absolute inset-0 flex items-center justify-center rounded-full ${
-                        feedbackType === "success" ? "bg-green-100 dark:bg-green-900/30" : "bg-red-100 dark:bg-red-900/30"
-                      }`}>
-                        {feedbackType === "success" ? (
-                          <CheckCircle2 className="h-16 w-16 text-green-500 dark:text-green-400" />
-                        ) : (
-                          <AlertCircle className="h-16 w-16 text-red-500 dark:text-red-400" />
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  </div>
-                </div>
+        {/* Stimulus circle */}
+        <div className="relative flex items-center justify-center h-48 w-48 rounded-full bg-white shadow-lg border-4 border-surface">
+          <span
+            className={`text-8xl font-black transition-all duration-100 ${
+              currentLetter === targetLetter ? "text-primary scale-110" : "text-gray-800"
+            }`}
+          >
+            {currentLetter}
+          </span>
 
-                <div className="w-full">
-                  <Button 
-                    className="w-full h-12 text-white font-medium text-lg bg-[#3876F4] hover:bg-[#3876F4]/90 active:scale-95 transition-transform"
-                    onClick={handleButtonPress}
-                    disabled={gamePaused || showLevelTransition}
-                  >
-                    Pulsar
-                  </Button>
-                </div>
-              </>
-            )}
-          </CardContent>
-        </Card>
+          {/* Feedback overlay */}
+          {showFeedback && (
+            <div
+              className={`absolute inset-0 flex items-center justify-center rounded-full transition-all ${
+                feedbackType === "success"
+                  ? "bg-success/20"
+                  : "bg-red-500/20"
+              }`}
+            >
+              {feedbackType === "success" ? (
+                <CheckCircle2 className="h-20 w-20 text-success" />
+              ) : (
+                <AlertCircle className="h-20 w-20 text-red-500" />
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Score */}
+        <div className="flex gap-6 text-base text-gray-500">
+          <span>
+            Aciertos: <strong className="text-success">{results.correctResponses}</strong>
+          </span>
+          <span>
+            Errores:{" "}
+            <strong className="text-red-500">
+              {results.commissionErrors + results.omissionErrors}
+            </strong>
+          </span>
+        </div>
+
+        {/* Action button */}
+        <NSButton
+          size="lg"
+          className="w-full text-2xl font-bold"
+          onClick={handleButtonPress}
+          disabled={gamePaused || showLevelTransition}
+        >
+          ¡PULSAR!
+        </NSButton>
       </div>
 
       <AlertDialog open={showDialog} onOpenChange={setShowDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>
-              {gameStarted && !gameFinished 
-                ? "¿Deseas pausar el ejercicio?" 
-                : "¿Deseas abandonar el ejercicio?"}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {gameStarted && !gameFinished
-                ? "Puedes continuar o abandonar el ejercicio."
-                : "Si abandonas ahora, perderás el progreso actual."}
-            </AlertDialogDescription>
+            <AlertDialogTitle>¿Pausar el ejercicio?</AlertDialogTitle>
+            <AlertDialogDescription>Puedes continuar o abandonar el ejercicio.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            {gameStarted && !gameFinished ? (
-              <>
-                <AlertDialogCancel onClick={resumeGame}>Continuar</AlertDialogCancel>
-                <AlertDialogAction onClick={() => router.push("/panel")}>Abandonar</AlertDialogAction>
-              </>
-            ) : (
-              <>
-                <AlertDialogCancel>Volver</AlertDialogCancel>
-                <AlertDialogAction onClick={() => router.push("/panel")}>Abandonar</AlertDialogAction>
-              </>
-            )}
+            <AlertDialogCancel onClick={resumeGame}>Continuar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => router.push("/panel")}>Abandonar</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </main>
+    </ExerciseShell>
   )
-} 
+}

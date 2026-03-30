@@ -23,15 +23,27 @@ const config = {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
-        background: "hsl(var(--background))",
+        background: "#FAFAFA",
         foreground: "hsl(var(--foreground))",
         primary: {
-          DEFAULT: "#3876F4",
-          foreground: "hsl(var(--primary-foreground))",
+          DEFAULT: "#4F46E5",
+          foreground: "#FFFFFF",
+          light: "#818CF8",
+          dark: "#3730A3",
         },
         secondary: {
           DEFAULT: "hsl(var(--secondary))",
           foreground: "hsl(var(--secondary-foreground))",
+        },
+        success: {
+          DEFAULT: "#10B981",
+          light: "#34D399",
+          dark: "#059669",
+        },
+        warning: {
+          DEFAULT: "#F59E0B",
+          light: "#FBBF24",
+          dark: "#D97706",
         },
         destructive: {
           DEFAULT: "hsl(var(--destructive))",
@@ -53,6 +65,8 @@ const config = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        surface: "#F3F4F6",
+        bg: "#FAFAFA",
       },
       borderRadius: {
         lg: "var(--radius)",
